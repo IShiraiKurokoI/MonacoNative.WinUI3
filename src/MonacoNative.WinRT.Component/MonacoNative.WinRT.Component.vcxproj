@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|ARM64"><Configuration>Debug</Configuration><Platform>ARM64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|ARM64"><Configuration>Release</Configuration><Platform>ARM64</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <EnableNativePackageReferenceSupport>true</EnableNativePackageReferenceSupport>
+    <ProjectGuid>{D91D0C54-62D3-45F0-A0EE-1F9D8B7CF311}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>MonacoNative.WinRT</RootNamespace>
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <MinimumVisualStudioVersion>17.0</MinimumVisualStudioVersion>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformMinVersion>10.0.19041.0</WindowsTargetPlatformMinVersion>
+    <CppWinRTProjectLanguage>C++/WinRT</CppWinRTProjectLanguage>
+    <CppWinRTModernIDL>true</CppWinRTModernIDL>
+    <CppWinRTOptimized>true</CppWinRTOptimized>
+    <CppWinRTRootNamespaceAutoMerge>true</CppWinRTRootNamespaceAutoMerge>
+    <CppWinRTGenerateWindowsMetadata>true</CppWinRTGenerateWindowsMetadata>
+    <CppWinRTEnableComponentProjection>true</CppWinRTEnableComponentProjection>
+    <CppWinRTImplicitlyExpandTargetPlatform>true</CppWinRTImplicitlyExpandTargetPlatform>
+    <MinimalCoreWin>true</MinimalCoreWin>
+    <CanReferenceWinRT>true</CanReferenceWinRT>
+    <XamlLanguage>CppWinRT</XamlLanguage>
+    <DesktopCompatible>true</DesktopCompatible>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <PlatformToolset Condition="'$(VisualStudioVersion)' &gt;= '18.0'">v145</PlatformToolset>
+    <PlatformToolset Condition="'$(VisualStudioVersion)' &lt; '18.0'">v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'" Label="Configuration"><UseDebugLibraries>true</UseDebugLibraries></PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Release'" Label="Configuration"><UseDebugLibraries>false</UseDebugLibraries><WholeProgramOptimization>true</WholeProgramOptimization></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <OutDir>$(ProjectDir)..\..\artifacts\winrt\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)..\..\artifacts\obj\WinRT.Component\$(Platform)\$(Configuration)\</IntDir>
+    <TargetName>MonacoNative.WinRT.Component</TargetName>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <Midl>
+      <EnableWindowsRuntime>true</EnableWindowsRuntime>
+      <MetadataFileName>Unmerged%(Filename).winmd</MetadataFileName>
+      <GenerateClientFiles>None</GenerateClientFiles>
+      <GenerateServerFiles>None</GenerateServerFiles>
+      <GenerateStublessProxies>false</GenerateStublessProxies>
+      <GenerateTypeLibrary>false</GenerateTypeLibrary>
+      <HeaderFileName>nul</HeaderFileName>
+      <DllDataFileName>nul</DllDataFileName>
+      <InterfaceIdentifierFileName>nul</InterfaceIdentifierFileName>
+      <ProxyFileName>nul</ProxyFileName>
+      <TypeLibraryName>nul</TypeLibraryName>
+    </Midl>
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <ConformanceMode>true</ConformanceMode>
+      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\MonacoNative.Core\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <Midl Include="EditorHost.idl" />
+    <ClInclude Include="pch.h" />
+    <ClInclude Include="EditorHost.h" />
+    <ClCompile Include="pch.cpp"><PrecompiledHeader>Create</PrecompiledHeader></ClCompile>
+    <ClCompile Include="EditorHost.cpp" />
+    <ClCompile Include="dllmain.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MonacoNative.Core\MonacoNative.Core.vcxproj"><Project>{7E286878-F964-4B6E-8FD3-2AF594D83B1A}</Project></ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Windows.CppWinRT" Version="3.0.260818.1" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Target Name="MonacoNativeVerifyCppWinRTIntegration" BeforeTargets="Midl">
+    <Error Condition="'$(CppWinRTPath)' == ''"
+           Text="Microsoft.Windows.CppWinRT build integration was not loaded. This project uses native PackageReference; Visual Studio 2026 requires EnableNativePackageReferenceSupport=true (already set in this project). Restore NuGet packages, then rebuild." />
+  </Target>
+</Project>

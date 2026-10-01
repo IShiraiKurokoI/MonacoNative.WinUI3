@@ -1,0 +1,274 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  linux-gcc:
+    name: Native core, managed integration and parity (GCC)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '8.0.x'
+      - name: Validate source and test naming
+        run: python3 scripts/check-semantic-names.py
+      - name: Validate WinUI XAML resources
+        run: python3 scripts/check-sample-xaml-resources.py
+      - name: Validate demo UI, localization and menus
+        run: python3 scripts/check-demo-ui.py
+      - name: Validate native ABI export contract
+        run: python3 scripts/check-abi-contract.py
+      - name: Validate TSF-only input and COM source contracts
+        run: |
+          python3 scripts/check-tsf-input-guards.py
+          python3 scripts/check-tsf-source-guards.py
+          python3 scripts/check-tsf-connection-guards.py
+      - name: Validate NuGet WinRT metadata
+        run: python3 scripts/check-winrt-package-metadata.py
+      - name: Validate NuGet architecture and TSF linker options
+        run: python3 scripts/check-packaging-platforms.py
+      - name: Validate benchmark JSON schemas and budgets
+        run: python3 scripts/check-benchmark-schema.py
+      - name: Validate headless Windows smoke safeguards
+        run: python3 scripts/check-windows-smoke-guards.py
+      - name: Configure native GCC Release build
+        run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMONACONATIVE_WARNINGS_AS_ERRORS=ON
+      - name: Build native core and ABI tests
+        run: cmake --build build --parallel
+      - name: Test native text model, cursor, folding and Unicode
+        run: ctest --test-dir build --output-on-failure -L '^core$' --output-junit "$PWD/build/ctest-core.xml"
+      - name: Test native C ABI and lifetime contracts
+        run: ctest --test-dir build --output-on-failure -L '^abi$' --output-junit "$PWD/build/ctest-abi.xml"
+      - name: Test native input backends
+        run: ctest --test-dir build --output-on-failure -L '^input$' --output-junit "$PWD/build/ctest-input.xml"
+      - name: Test text composition and internationalization
+        run: dotnet run --project tests/InputTests/MonacoNative.Input.Tests.csproj -c Release
+      - name: Test accessibility and pseudolocalization
+        run: dotnet run --project tests/AccessibilityTests/MonacoNative.Accessibility.Tests.csproj -c Release
+      - name: Test language providers and contributions
+        run: dotnet run --project tests/LanguageTests/MonacoNative.Language.Tests.csproj -c Release
+      - name: Test LSP protocol and provider integration
+        run: dotnet run --project tests/LspTests/MonacoNative.Lsp.Tests.csproj -c Release
+      - name: Test renderer cache and incremental invalidation
+        run: dotnet run --project tests/RendererLogicTests/MonacoNative.RendererLogic.Tests.csproj -c Release
+      - name: Measure native core quick performance budgets
+        run: bash ./scripts/run-benchmarks.sh quick
+      - name: Measure native core full performance budgets
+        run: bash ./scripts/run-benchmarks.sh full
+      - name: Validate Monaco compatibility and release evidence
+        run: python3 scripts/check-parity-release.py --allow-missing-windows --output artifacts/release/parity-report.json
+      - name: Upload native core performance and parity report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: linux-core-performance-and-parity
+          path: |
+            artifacts/benchmarks/core-quick.json
+            artifacts/benchmarks/core-full.json
+            artifacts/release/parity-report.json
+          if-no-files-found: ignore
+      - name: Upload GCC CTest result
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: linux-gcc-ctest-results
+          path: build/ctest-*.xml
+          if-no-files-found: ignore
+
+  linux-clang-sanitizers:
+    name: Native core and integration under ASan/UBSan (Clang)
+    runs-on: ubuntu-latest
+    env:
+      CC: clang
+      CXX: clang++
+      ASAN_OPTIONS: detect_leaks=1:strict_string_checks=1
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '8.0.x'
+      - name: Validate Windows ABI UTF-16 compilation
+        run: >-
+          clang++ -std=c++20 -fshort-wchar -D_WIN32 -D__cdecl= '-D__declspec(x)='
+          -Wall -Wextra -Wpedantic -fsyntax-only
+          -Isrc/MonacoNative.Core.Native -Itests/TestSupport
+          tests/NativeAbiTests/main.cpp
+      - name: Configure ASan and UBSan build
+        run: cmake -S . -B build-sanitize -G Ninja -DCMAKE_BUILD_TYPE=Debug -DMONACONATIVE_ENABLE_SANITIZERS=ON -DMONACONATIVE_WARNINGS_AS_ERRORS=ON
+      - name: Build sanitized native core
+        run: cmake --build build-sanitize --parallel
+      - name: Test core model and Unicode under ASan/UBSan
+        run: ctest --test-dir build-sanitize --output-on-failure -L '^core$' --output-junit "$PWD/build-sanitize/ctest-core.xml"
+      - name: Test native ABI under ASan/UBSan
+        run: ctest --test-dir build-sanitize --output-on-failure -L '^abi$' --output-junit "$PWD/build-sanitize/ctest-abi.xml"
+      - name: Test input backend under ASan/UBSan
+        run: ctest --test-dir build-sanitize --output-on-failure -L '^input$' --output-junit "$PWD/build-sanitize/ctest-input.xml"
+      - name: Test input and internationalization
+        run: dotnet run --project tests/InputTests/MonacoNative.Input.Tests.csproj -c Release
+      - name: Test accessibility
+        run: dotnet run --project tests/AccessibilityTests/MonacoNative.Accessibility.Tests.csproj -c Release
+      - name: Test language providers
+        run: dotnet run --project tests/LanguageTests/MonacoNative.Language.Tests.csproj -c Release
+      - name: Test LSP protocol
+        run: dotnet run --project tests/LspTests/MonacoNative.Lsp.Tests.csproj -c Release
+      - name: Test renderer cache logic
+        run: dotnet run --project tests/RendererLogicTests/MonacoNative.RendererLogic.Tests.csproj -c Release
+      - name: Upload sanitized CTest result
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: linux-clang-sanitizer-test-results
+          path: build-sanitize/ctest-*.xml
+          if-no-files-found: ignore
+
+  windows-msvc-managed-winui:
+    name: MSVC native ABI, managed integration and WinUI rendering
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '8.0.x'
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Test text composition and internationalization
+        shell: pwsh
+        run: dotnet run --project tests/InputTests/MonacoNative.Input.Tests.csproj -c Release
+      - name: Test accessibility and pseudolocalization
+        shell: pwsh
+        run: dotnet run --project tests/AccessibilityTests/MonacoNative.Accessibility.Tests.csproj -c Release
+      - name: Test language providers and contributions
+        shell: pwsh
+        run: dotnet run --project tests/LanguageTests/MonacoNative.Language.Tests.csproj -c Release
+      - name: Test LSP protocol and provider integration
+        shell: pwsh
+        run: dotnet run --project tests/LspTests/MonacoNative.Lsp.Tests.csproj -c Release
+      - name: Test renderer cache and incremental invalidation
+        shell: pwsh
+        run: dotnet run --project tests/RendererLogicTests/MonacoNative.RendererLogic.Tests.csproj -c Release
+      - name: Build native MSVC core, ABI and TSF binaries
+        shell: pwsh
+        run: ./scripts/test-core.ps1 -Configuration Release -BuildOnly
+      - name: Test MSVC text model, Unicode and editor services
+        shell: pwsh
+        run: ctest --test-dir build-core -C Release --output-on-failure -L '^core$' --output-junit "$PWD/build-core/ctest-core.xml"
+      - name: Test MSVC Native C ABI and lifetime contracts
+        shell: pwsh
+        run: ctest --test-dir build-core -C Release --output-on-failure -L '^abi$' --output-junit "$PWD/build-core/ctest-abi.xml"
+      - name: Test TSF and native input backend
+        shell: pwsh
+        run: ctest --test-dir build-core -C Release --output-on-failure -L '^input$' --output-junit "$PWD/build-core/ctest-input.xml"
+      - name: Build x64 managed projection, WinRT and WinUI sample
+        shell: pwsh
+        run: ./scripts/build-windows.ps1 -Configuration Release -Platform x64
+      - name: Install Windows App Runtime for headless Win2D tests
+        shell: pwsh
+        run: ./scripts/install-windows-app-runtime-ci.ps1
+      - name: Test Win2D software renderer golden fingerprint
+        shell: pwsh
+        run: ./scripts/test-renderer-golden.ps1 -Configuration Release
+      - name: Measure Win2D renderer deterministic performance budgets
+        shell: pwsh
+        run: ./scripts/run-renderer-benchmarks.ps1 -Profile quick -Output (Join-Path $PWD "artifacts/benchmarks/renderer-quick.json")
+      - name: Test managed P-Invoke and native ABI integration
+        shell: pwsh
+        run: dotnet run --project tests/ManagedTests/MonacoNative.Managed.Tests.csproj -c Release -p:Platform=x64
+      - name: Measure native core quick performance budgets
+        shell: pwsh
+        run: ./scripts/run-benchmarks.ps1 -Profile quick -Output artifacts/benchmarks/core-quick.json
+      - name: Measure native core full performance budgets
+        shell: pwsh
+        run: ./scripts/run-benchmarks.ps1 -Profile full -Output artifacts/benchmarks/core-full.json
+      - name: Validate complete Monaco compatibility and release evidence
+        shell: pwsh
+        run: python scripts/check-parity-release.py --output artifacts/release/parity-report.json
+      - name: Upload Windows CTest results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-msvc-ctest-results
+          path: build-core/ctest-*.xml
+          if-no-files-found: ignore
+      - name: Upload renderer startup diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-renderer-headless-diagnostics
+          path: artifacts/ci-diagnostics/
+          if-no-files-found: ignore
+      - name: Upload renderer golden fingerprint
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-renderer-golden
+          path: artifacts/render-goldens/renderer-current.json
+          if-no-files-found: ignore
+      - name: Upload renderer benchmark results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-renderer-performance
+          path: artifacts/benchmarks/renderer-quick.json
+          if-no-files-found: ignore
+      - name: Upload native core performance and compatibility report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-core-performance-and-parity
+          path: |
+            artifacts/benchmarks/core-quick.json
+            artifacts/benchmarks/core-full.json
+            artifacts/release/parity-report.json
+          if-no-files-found: ignore
+
+  windows-package-distribution:
+    name: NuGet packing, managed consumers, C++/WinRT consumers and runtime smoke
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '8.0.x'
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Build and pack x64 and ARM64 native and WinUI assets
+        shell: pwsh
+        run: ./scripts/pack-windows.ps1 -Configuration Release -Version 0.1.0-ci
+      - name: Test x64 and ARM64 managed NuGet consumers and resources
+        shell: pwsh
+        run: ./scripts/test-package-managed-consumers.ps1 -Configuration Release -Version 0.1.0-ci
+      - name: Test x64 and ARM64 C++/WinRT NuGet consumers
+        shell: pwsh
+        run: ./scripts/test-package-cpp-consumers.ps1 -Configuration Release -Version 0.1.0-ci
+      - name: Run headless x64 native core NuGet consumer smoke
+        shell: pwsh
+        run: ./scripts/test-package-core-runtime.ps1 -Configuration Release -Version 0.1.0-ci
+      - name: Upload package core runtime diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-package-core-smoke-logs
+          path: artifacts/logs/package-core-consumer-*.log
+          if-no-files-found: ignore
+      - name: Upload NuGet packages
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-nuget-packages
+          path: artifacts/packages/*.nupkg
+          if-no-files-found: ignore
+      - name: Upload C++/WinRT component artifacts
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-winrt-components
+          path: |
+            artifacts/winrt/x64/Release/*
+            artifacts/winrt/ARM64/Release/*
+          if-no-files-found: ignore

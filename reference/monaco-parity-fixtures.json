@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "reference": {
+    "monacoEditorVersion": "0.57.0",
+    "vscodeRef": "6a598d4a13031703d483d103c1d934a36ad27971",
+    "status": "curated-contract",
+    "note": "Stable editor semantics mirrored by MonacoNative tests. This file is intentionally distinguished from browser-captured fixtures until a browser fixture recorder is run against the pinned Monaco build."
+  },
+  "fixtures": [
+    {
+      "id": "text.atomic-replace-undo",
+      "category": "text",
+      "initialText": "abc\\ndef",
+      "operation": "replace offsets [1,2) with XYZ",
+      "expectedText": "aXYZc\\ndef",
+      "expectedUndoText": "abc\\ndef"
+    },
+    {
+      "id": "selection.multi-cursor-insert",
+      "category": "selections",
+      "initialText": "abcd",
+      "operation": "insert ! at carets (1,2) and (1,4)",
+      "expectedText": "a!bc!d",
+      "expectedSelectionCount": 2
+    },
+    {
+      "id": "commands.weighted-keybinding",
+      "category": "commands",
+      "context": "editorTextFocus && !editorReadonly",
+      "key": "Ctrl+K",
+      "expectedCommand": "editor.action.keybinding.primary"
+    },
+    {
+      "id": "projection.hidden-injected-wrap",
+      "category": "projection",
+      "initialText": "root\\nabcdef\\nhidden\\ntail",
+      "operation": "hide line 3, inject <H> at 2:4, wrap width=4 with unit advance",
+      "expectedVisibleModelLines": [1, 2, 4],
+      "expectedInjectedText": "abc<H>def"
+    }
+  ]
+}

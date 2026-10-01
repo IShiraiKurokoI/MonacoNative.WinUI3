@@ -1,0 +1,103 @@
+{
+  "schemaVersion": 1,
+  "suite": "renderer-windows",
+  "budgets": {
+    "viewparts.diagnostics_isolated_dirty": {
+      "countsMax": {
+        "selection_rebuilds": 0,
+        "decorations_rebuilds": 0,
+        "diagnostics_rebuilds": 1,
+        "bracket_rebuilds": 0,
+        "overview_rebuilds": 0,
+        "caret_rebuilds": 0
+      },
+      "countsMin": {
+        "diagnostics_rebuilds": 1,
+        "cache_hits": 5
+      }
+    },
+    "layout.viewport_scroll_reuse": {
+      "countsMax": {
+        "document_lines": 100000,
+        "viewport_lines": 60,
+        "misses": 2500
+      },
+      "countsMin": {
+        "hits": 11000
+      }
+    },
+    "layout.resize_visible_only": {
+      "countsMax": {
+        "document_lines": 100000,
+        "viewport_lines": 60,
+        "current_entries": 60,
+        "misses": 14400
+      }
+    },
+    "minimap.steady_scroll_cached_rows": {
+      "countsMax": {
+        "rows_rebuilt": 0,
+        "source_lines_scanned": 0
+      },
+      "countsMin": {
+        "cache_hits": 1000
+      }
+    },
+    "minimap.single_line_incremental": {
+      "countsMax": {
+        "line_summaries_rebuilt": 1,
+        "rows_rebuilt": 1,
+        "source_lines_scanned": 120
+      },
+      "countsMin": {
+        "line_summaries_rebuilt": 1,
+        "rows_rebuilt": 1
+      }
+    },
+    "ranges.visible_query_sparse": {
+      "countsMax": {
+        "last_nodes_visited": 40,
+        "nodes_visited": 120000
+      }
+    },
+    "renderer.synthetic_scroll_frames": {
+      "countsMax": {
+        "document_lines": 100000,
+        "visible_lines_per_frame": 60,
+        "layout_misses": 1300,
+        "viewpart_rebuilds_per_frame": 6
+      },
+      "countsMin": {
+        "viewpart_rebuilds_per_frame": 6
+      }
+    },
+    "viewparts.decorations_isolated_dirty": {
+      "countsMax": {
+        "selection_rebuilds": 0,
+        "decorations_rebuilds": 1,
+        "diagnostics_rebuilds": 0,
+        "bracket_rebuilds": 0,
+        "overview_rebuilds": 0,
+        "caret_rebuilds": 0
+      },
+      "countsMin": {
+        "decorations_rebuilds": 1,
+        "cache_hits": 5
+      }
+    },
+    "viewparts.bracket_isolated_dirty": {
+      "countsMax": {
+        "selection_rebuilds": 0,
+        "decorations_rebuilds": 0,
+        "diagnostics_rebuilds": 0,
+        "bracket_rebuilds": 1,
+        "overview_rebuilds": 0,
+        "caret_rebuilds": 0
+      },
+      "countsMin": {
+        "bracket_rebuilds": 1,
+        "cache_hits": 5
+      }
+    }
+  }
+}

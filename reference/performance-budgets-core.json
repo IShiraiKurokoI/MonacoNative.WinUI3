@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "suite": "core-native",
+  "policy": "CI gates deterministic work counts; The projection regression guard also forbids flattened suffix renumbering on local or structural projection updates. Wall-clock metrics are trend evidence only.",
+  "budgets": {
+    "view.local_typing_incremental": {
+      "countsMax": {
+        "measure_calls_per_edit_max": 80,
+        "replacement_model_lines_per_edit_max": 1,
+        "suffix_view_line_metadata_rewrites_per_edit_max": 0,
+        "projection_slot_moves_per_edit_max": 0
+      }
+    },
+    "view.structural_splice_incremental": {
+      "countsMax": {
+        "measure_calls_insert": 160,
+        "measure_calls_delete": 160,
+        "suffix_view_line_metadata_rewrites_insert": 0,
+        "suffix_view_line_metadata_rewrites_delete": 0,
+        "replacement_model_lines_insert": 2,
+        "replacement_model_lines_delete": 1
+      }
+    }
+  }
+}

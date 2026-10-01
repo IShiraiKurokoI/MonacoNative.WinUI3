@@ -1,0 +1,31 @@
+find_package(Threads REQUIRED)
+
+function(monaconative_add_core_test target source)
+    add_executable(${target} ${source})
+    target_link_libraries(${target} PRIVATE MonacoNative.Core Threads::Threads)
+    target_include_directories(${target} PRIVATE
+        ${PROJECT_SOURCE_DIR}/src/MonacoNative.Core/include
+        ${PROJECT_SOURCE_DIR}/tests/TestSupport
+    )
+    target_compile_features(${target} PRIVATE cxx_std_20)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /W4 /permissive- /EHsc)
+    else()
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME ${target} COMMAND ${target})
+    set_tests_properties(${target} PROPERTIES LABELS "core;unit")
+endfunction()
+
+monaconative_add_core_test(MonacoNative.PieceTree.Tests PieceTreeTests.cpp)
+monaconative_add_core_test(MonacoNative.TextModel.Tests TextModelTests.cpp)
+monaconative_add_core_test(MonacoNative.Cursor.Tests CursorTests.cpp)
+monaconative_add_core_test(MonacoNative.ViewModel.Tests ViewModelTests.cpp)
+monaconative_add_core_test(MonacoNative.FoldingModel.Tests FoldingModelTests.cpp)
+monaconative_add_core_test(MonacoNative.Infrastructure.Tests InfrastructureTests.cpp)
+monaconative_add_core_test(MonacoNative.LanguageAndDiff.Tests LanguageAndDiffTests.cpp)
+monaconative_add_core_test(MonacoNative.Property.Tests PropertyTests.cpp)
+monaconative_add_core_test(MonacoNative.Commands.Tests CommandTests.cpp)
+monaconative_add_core_test(MonacoNative.UnicodeSegmentation.Tests UnicodeSegmentationTests.cpp)
+monaconative_add_core_test(MonacoNative.ParityFixture.Tests ParityFixtureTests.cpp)
+set_tests_properties(MonacoNative.Property.Tests PROPERTIES LABELS "core;property;fuzz" TIMEOUT 120)

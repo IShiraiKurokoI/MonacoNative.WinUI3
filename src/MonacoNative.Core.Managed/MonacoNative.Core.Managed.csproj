@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PackageId>MonacoNative.Core</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>MonacoNative</Authors>
+    <Description>Native Monaco-style text model core with a managed .NET wrapper.</Description>
+    <PackageTags>monaco;editor;native;winui;cpp</PackageTags>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <Platforms>x64;ARM64</Platforms>
+    <!-- The NuGet lib/ assembly is shared by x64 and ARM64; native DLLs remain RID-specific. -->
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <RepoRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\'))</RepoRoot>
+    <NativeCoreX64Dll>$(RepoRoot)artifacts\native\x64\$(Configuration)\MonacoNative.Core.Native.dll</NativeCoreX64Dll>
+    <NativeCoreArm64Dll>$(RepoRoot)artifacts\native\ARM64\$(Configuration)\MonacoNative.Core.Native.dll</NativeCoreArm64Dll>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="$(NativeCoreX64Dll)" Pack="true" PackagePath="runtimes\win-x64\native\" Visible="false" Condition="Exists('$(NativeCoreX64Dll)')" />
+    <None Include="$(NativeCoreArm64Dll)" Pack="true" PackagePath="runtimes\win-arm64\native\" Visible="false" Condition="Exists('$(NativeCoreArm64Dll)')" />
+  </ItemGroup>
+  <Target Name="RequireNativeCoreForPack" BeforeTargets="Pack">
+    <Error Condition="!Exists('$(NativeCoreX64Dll)')" Text="x64 native core DLL not found at $(NativeCoreX64Dll)." />
+    <Error Condition="!Exists('$(NativeCoreArm64Dll)')" Text="ARM64 native core DLL not found at $(NativeCoreArm64Dll)." />
+  </Target>
+</Project>

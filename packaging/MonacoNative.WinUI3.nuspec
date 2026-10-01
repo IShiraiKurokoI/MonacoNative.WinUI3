@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<package>
+  <metadata>
+    <id>MonacoNative.WinUI3</id>
+    <version>$version$</version>
+    <authors>MonacoNative</authors>
+    <owners>MonacoNative</owners>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <license type="file">LICENSE</license>
+    <readme>README.md</readme>
+    <description>Native Monaco-style editor for WinUI 3 with C++ core, managed projection, native rendering, diff editor, language providers, LSP, IME, accessibility and globalization.</description>
+    <tags>monaco editor winui winui3 native cpp lsp diff accessibility</tags>
+    <dependencies>
+      <group targetFramework="net8.0-windows10.0.26100.0">
+        <dependency id="Microsoft.WindowsAppSDK" version="[2.4.0]" />
+        <dependency id="Microsoft.Graphics.Win2D" version="[1.4.0]" />
+      </group>
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="..\LICENSE" target="LICENSE" />
+    <file src="..\README.md" target="README.md" />
+    <file src="..\src\MonacoNative.Core.Managed\bin\x64\$configuration$\net8.0-windows10.0.26100.0\MonacoNative.Core.Managed.dll" target="lib\net8.0-windows10.0.26100.0" />
+    <file src="..\src\MonacoNative.Renderer.WinUI3\bin\x64\$configuration$\net8.0-windows10.0.26100.0\MonacoNative.Renderer.WinUI3.dll" target="lib\net8.0-windows10.0.26100.0" />
+    <file src="..\src\MonacoNative.Input\bin\$configuration$\net8.0\MonacoNative.Input.dll" target="lib\net8.0-windows10.0.26100.0" />
+    <file src="..\src\MonacoNative.I18n\bin\$configuration$\net8.0\MonacoNative.I18n.dll" target="lib\net8.0-windows10.0.26100.0" />
+    <file src="..\src\MonacoNative.Accessibility\bin\$configuration$\net8.0\MonacoNative.Accessibility.dll" target="lib\net8.0-windows10.0.26100.0" />
+    <file src="..\src\MonacoNative.Language\bin\$configuration$\net8.0\MonacoNative.Language.dll" target="lib\net8.0-windows10.0.26100.0" />
+    <file src="..\src\MonacoNative.Lsp\bin\$configuration$\net8.0\MonacoNative.Lsp.dll" target="lib\net8.0-windows10.0.26100.0" />
+    <file src="..\src\MonacoNative.Renderer.WinUI3\bin\x64\$configuration$\net8.0-windows10.0.26100.0\*.pri" target="lib\net8.0-windows10.0.26100.0" />
+    <file src="..\src\MonacoNative.Renderer.WinUI3\bin\x64\$configuration$\net8.0-windows10.0.26100.0\**\*.xbf" target="lib\net8.0-windows10.0.26100.0" />
+    <file src="..\artifacts\native\x64\$configuration$\MonacoNative.Core.Native.dll" target="runtimes\win-x64\native" />
+    <file src="..\artifacts\native\ARM64\$configuration$\MonacoNative.Core.Native.dll" target="runtimes\win-arm64\native" />
+    <file src="buildTransitive\MonacoNative.WinUI3.targets" target="buildTransitive\net8.0-windows10.0.26100.0" />
+  </files>
+</package>

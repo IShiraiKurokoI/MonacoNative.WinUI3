@@ -1,0 +1,32 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <_MonacoNativeArch Condition="'$(PlatformTarget)' == 'ARM64' Or '$(Platform)' == 'ARM64'">arm64</_MonacoNativeArch>
+    <_MonacoNativeArch Condition="'$(_MonacoNativeArch)' == '' And ('$(PlatformTarget)' == 'x64' Or '$(Platform)' == 'x64')">x64</_MonacoNativeArch>
+    <_MonacoNativeArch Condition="'$(_MonacoNativeArch)' == '' And '$(RuntimeIdentifier)' == 'win-arm64'">arm64</_MonacoNativeArch>
+    <_MonacoNativeArch Condition="'$(_MonacoNativeArch)' == '' And '$(RuntimeIdentifier)' == 'win-x64'">x64</_MonacoNativeArch>
+  </PropertyGroup>
+
+  <Target Name="MonacoNativeValidateArchitecture" BeforeTargets="Build">
+    <Error Condition="'$(_MonacoNativeArch)' == ''"
+           Text="MonacoNative.WinUI3 supports x64 and ARM64. Set Platform/PlatformTarget or RuntimeIdentifier to x64/ARM64 (win-x64/win-arm64)." />
+  </Target>
+
+  <ItemGroup Condition="'$(_MonacoNativeArch)' != ''">
+    <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-$(_MonacoNativeArch)\native\MonacoNative.Core.Native.dll"
+          Link="MonacoNative.Core.Native.dll"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest"
+          Visible="false"
+          Condition="Exists('$(MSBuildThisFileDirectory)..\..\runtimes\win-$(_MonacoNativeArch)\native\MonacoNative.Core.Native.dll')" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\lib\net8.0-windows10.0.26100.0\*.pri"
+          Link="%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest"
+          Visible="false" />
+    <None Include="$(MSBuildThisFileDirectory)..\..\lib\net8.0-windows10.0.26100.0\**\*.xbf"
+          Link="%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest"
+          Visible="false" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="..\..\src\MonacoNative.Renderer.WinUI3\MinimapLineCache.cs" Link="MinimapLineCache.cs" />
+    <Compile Include="..\..\src\MonacoNative.Renderer.WinUI3\MinimapRowCache.cs" Link="MinimapRowCache.cs" />
+    <Compile Include="..\..\src\MonacoNative.Renderer.WinUI3\LineRangeIndex.cs" Link="LineRangeIndex.cs" />
+    <Compile Include="..\..\src\MonacoNative.Renderer.WinUI3\EditorPointerCursorPolicy.cs" Link="EditorPointerCursorPolicy.cs" />
+    <Compile Include="..\..\src\MonacoNative.Renderer.WinUI3\EditorFoldingRanges.cs" Link="EditorFoldingRanges.cs" />
+    <Compile Include="..\..\src\MonacoNative.Renderer.WinUI3\EditorMethodProfiler.cs" Link="EditorMethodProfiler.cs" />
+    <Compile Include="..\..\src\MonacoNative.Renderer.WinUI3\EditorFindEngine.cs" Link="EditorFindEngine.cs" />
+  </ItemGroup>
+</Project>

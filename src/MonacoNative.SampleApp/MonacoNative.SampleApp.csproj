@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <RootNamespace>MonacoNative.SampleApp</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>x64;ARM64</Platforms>
+    <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
+    <PublishProfile>win-$(Platform).pubxml</PublishProfile>
+    <UseWinUI>true</UseWinUI>
+    <EnableMsixTooling>false</EnableMsixTooling>
+    <WindowsPackageType>None</WindowsPackageType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RepoRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\'))</RepoRoot>
+    <NativeCoreDll>$(RepoRoot)artifacts\native\$(Platform)\$(Configuration)\MonacoNative.Core.Native.dll</NativeCoreDll>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
+    <ProjectReference Include="..\MonacoNative.Core.Managed\MonacoNative.Core.Managed.csproj" />
+    <ProjectReference Include="..\MonacoNative.Input\MonacoNative.Input.csproj" />
+    <ProjectReference Include="..\MonacoNative.Renderer.WinUI3\MonacoNative.Renderer.WinUI3.csproj" />
+    <ProjectReference Include="..\MonacoNative.Core.Native\MonacoNative.Core.Native.vcxproj">
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <SkipGetTargetFrameworkProperties>true</SkipGetTargetFrameworkProperties>
+      <Private>false</Private>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <!-- SDK-style projects compile all **/*.cs; demo.cs must remain a content asset only. -->
+    <Compile Remove="Assets\Samples\**\*.cs" />
+    <Content Include="Assets\Samples\*.*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <Target Name="CopyNativeCore" AfterTargets="Build">
+    <Error Condition="!Exists('$(NativeCoreDll)')" Text="Native core DLL not found at $(NativeCoreDll)." />
+    <Copy SourceFiles="$(NativeCoreDll)" DestinationFolder="$(OutDir)" />
+  </Target>
+</Project>

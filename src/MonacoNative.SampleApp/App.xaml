@@ -1,0 +1,60 @@
+<Application
+    x:Class="MonacoNative.SampleApp.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Application.Resources>
+        <ResourceDictionary>
+            <!-- Merge WinUI 3 control templates/theme brushes before our application overrides.
+                 Without this, controls such as DropDownButton can fail at startup with
+                 "Cannot find a Resource with the Name/Key TabViewButtonBackground". -->
+            <ResourceDictionary.MergedDictionaries>
+                <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
+            </ResourceDictionary.MergedDictionaries>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#F5F5F7" />
+                    <SolidColorBrush x:Key="ToolbarBackgroundBrush" Color="#FAFAFC" />
+                    <SolidColorBrush x:Key="ToolbarBorderBrush" Color="#D7D7DC" />
+                    <SolidColorBrush x:Key="ToolbarForegroundBrush" Color="#1F1F23" />
+                    <SolidColorBrush x:Key="StatusBackgroundBrush" Color="#FFFFFFFF" />
+                    <SolidColorBrush x:Key="StatusBorderBrush" Color="#D7D7DC" />
+                    <SolidColorBrush x:Key="StatusForegroundBrush" Color="#2C2C32" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#18181B" />
+                    <SolidColorBrush x:Key="ToolbarBackgroundBrush" Color="#252526" />
+                    <SolidColorBrush x:Key="ToolbarBorderBrush" Color="#45454A" />
+                    <SolidColorBrush x:Key="ToolbarForegroundBrush" Color="#F3F3F3" />
+                    <SolidColorBrush x:Key="StatusBackgroundBrush" Color="#202024" />
+                    <SolidColorBrush x:Key="StatusBorderBrush" Color="#3B3B40" />
+                    <SolidColorBrush x:Key="StatusForegroundBrush" Color="#D0D0D4" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Default">
+                    <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#18181B" />
+                    <SolidColorBrush x:Key="ToolbarBackgroundBrush" Color="#252526" />
+                    <SolidColorBrush x:Key="ToolbarBorderBrush" Color="#45454A" />
+                    <SolidColorBrush x:Key="ToolbarForegroundBrush" Color="#F3F3F3" />
+                    <SolidColorBrush x:Key="StatusBackgroundBrush" Color="#202024" />
+                    <SolidColorBrush x:Key="StatusBorderBrush" Color="#3B3B40" />
+                    <SolidColorBrush x:Key="StatusForegroundBrush" Color="#D0D0D4" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+
+            <Style x:Key="ToolbarLabelStyle" TargetType="TextBlock">
+                <Setter Property="Foreground" Value="{ThemeResource ToolbarForegroundBrush}" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="Margin" Value="0,0,2,0" />
+            </Style>
+            <Style x:Key="ToolbarComboBoxStyle" TargetType="ComboBox">
+                <Setter Property="CornerRadius" Value="8" />
+                <Setter Property="MinWidth" Value="132" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
+            <Style x:Key="ToolbarButtonStyle" TargetType="AppBarButton">
+                <Setter Property="Foreground" Value="{ThemeResource ToolbarForegroundBrush}" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="CornerRadius" Value="8" />
+            </Style>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

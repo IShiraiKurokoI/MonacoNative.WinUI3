@@ -1,0 +1,71 @@
+{
+  "monacoEditorVersion": "0.57.0",
+  "vscodeRef": "6a598d4a13031703d483d103c1d934a36ad27971",
+  "namespace": "monaco.languages",
+  "implementedApis": [
+    "register",
+    "getLanguages",
+    "score",
+    "setLanguageConfiguration",
+    "setMonarchTokensProvider",
+    "registerCompletionItemProvider",
+    "registerHoverProvider",
+    "registerSignatureHelpProvider",
+    "registerInlayHintsProvider",
+    "registerCodeActionProvider",
+    "registerReferenceProvider",
+    "registerRenameProvider",
+    "registerColorProvider",
+    "registerInlineCompletionsProvider",
+    "registerCodeLensProvider"
+  ],
+  "implementedTypes": [
+    "ILanguageExtensionPoint",
+    "LanguageSelector",
+    "LanguageConfiguration",
+    "CommentRule",
+    "CharacterPair",
+    "IAutoClosingPair",
+    "IMonarchLanguage",
+    "CompletionItemProvider",
+    "HoverProvider",
+    "SignatureHelpProvider",
+    "InlayHintsProvider",
+    "CodeActionProvider",
+    "ReferenceProvider",
+    "RenameProvider",
+    "DocumentColorProvider",
+    "InlineCompletionsProvider",
+    "CodeLensProvider"
+  ],
+  "monarchCompatibility": [
+    "stateful line tokenization",
+    "include",
+    "cases",
+    "@keywords",
+    "@default",
+    "@push",
+    "@pop",
+    "@popall",
+    "hierarchical state fallback"
+  ],
+  "rendererIntegration": [
+    "incremental line-state cache",
+    "CanvasTextLayout token colors",
+    "wrapped-view mapping",
+    "injected-text exclusion",
+    "bracket-color override",
+    "inlay hints through injected text",
+    "WinUI suggest/hover/signature/code-action overlay presenters",
+    "inline completion ghost text through injected text",
+    "CodeLens overlay commands",
+    "color picker presentations",
+    "reference and rename presenters"
+  ],
+  "deferredApis": [
+    "setTokensProvider",
+    "registerTokensProviderFactory",
+    "semantic token providers",
+    "definition/formatting/link providers"
+  ]
+}

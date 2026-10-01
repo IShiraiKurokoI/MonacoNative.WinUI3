@@ -1,0 +1,112 @@
+{
+  "monacoVersion": "0.57.0",
+  "vscodeRef": "6a598d4a13031703d483d103c1d934a36ad27971",
+  "policy": "Use the upstream command id as the localization key whenever the operation has a Monaco/VS Code equivalent. English values are upstream source labels; translations must preserve operation semantics, not translate an unrelated local label.",
+  "operations": [
+    {
+      "id": "undo",
+      "sourceLabel": "Undo",
+      "kind": "upstream"
+    },
+    {
+      "id": "redo",
+      "sourceLabel": "Redo",
+      "kind": "upstream"
+    },
+    {
+      "id": "editor.action.clipboardCutAction",
+      "sourceLabel": "Cut",
+      "kind": "upstream"
+    },
+    {
+      "id": "editor.action.clipboardCopyAction",
+      "sourceLabel": "Copy",
+      "kind": "upstream"
+    },
+    {
+      "id": "editor.action.clipboardPasteAction",
+      "sourceLabel": "Paste",
+      "kind": "upstream"
+    },
+    {
+      "id": "editor.action.selectAll",
+      "sourceLabel": "Select All",
+      "kind": "upstream"
+    },
+    {
+      "id": "editor.action.addCommentLine",
+      "sourceLabel": "Add Line Comment",
+      "kind": "upstream"
+    },
+    {
+      "id": "editor.action.removeCommentLine",
+      "sourceLabel": "Remove Line Comment",
+      "kind": "upstream"
+    },
+    {
+      "id": "editor.action.toggleWordWrap",
+      "sourceLabel": "Toggle Word Wrap",
+      "kind": "upstream"
+    },
+    {
+      "id": "editor.action.toggleRenderWhitespace",
+      "sourceLabel": "Toggle Render Whitespace",
+      "kind": "upstream"
+    },
+    {
+      "id": "editor.action.toggleMinimap",
+      "sourceLabel": "Toggle Minimap",
+      "kind": "upstream"
+    },
+    {
+      "id": "actions.find",
+      "sourceLabel": "Find",
+      "kind": "upstream"
+    },
+    {
+      "id": "editor.action.startFindReplaceAction",
+      "sourceLabel": "Replace",
+      "kind": "upstream"
+    },
+    {
+      "id": "editor.action.triggerSuggest",
+      "sourceLabel": "Trigger Suggest",
+      "kind": "upstream"
+    },
+    {
+      "id": "editor.action.showHover",
+      "sourceLabel": "Show Hover",
+      "kind": "upstream"
+    },
+    {
+      "id": "editor.action.triggerParameterHints",
+      "sourceLabel": "Trigger Parameter Hints",
+      "kind": "upstream"
+    },
+    {
+      "id": "editor.action.rename",
+      "sourceLabel": "Rename Symbol",
+      "kind": "upstream"
+    },
+    {
+      "id": "editor.action.referenceSearch.trigger",
+      "sourceLabel": "Peek References",
+      "kind": "upstream"
+    },
+    {
+      "id": "editor.action.quickFix",
+      "sourceLabel": "Quick Fix",
+      "kind": "upstream"
+    },
+    {
+      "id": "editor.action.inlineSuggest.trigger",
+      "sourceLabel": "Trigger Inline Suggestion",
+      "kind": "upstream"
+    },
+    {
+      "id": "editor.action.inlineSuggest.commit",
+      "sourceLabel": "Accept Inline Suggestion",
+      "kind": "upstream"
+    }
+  ]
+}

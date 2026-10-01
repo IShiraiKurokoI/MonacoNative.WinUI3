@@ -1,0 +1,34 @@
+.vs/
+build/
+build-*/
+out/
+packages/
+x64/
+x86/
+ARM64/
+Debug/
+Release/
+Generated Files/
+*.user
+*.VC.db
+*.suo
+*.obj
+*.pch
+*.pdb
+*.ilk
+*.exe
+*.dll
+*.lib
+*.exp
+*.winmd
+*.pri
+
+# Generated caches/build intermediates
+__pycache__/
+*.py[cod]
+.pytest_cache/
+bin/
+obj/
+
+# Test artifacts
+artifacts/

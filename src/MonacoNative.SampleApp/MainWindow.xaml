@@ -1,0 +1,169 @@
+<Window
+    x:Class="MonacoNative.SampleApp.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:renderer="using:MonacoNative.Renderer.WinUI3">
+
+    <Grid x:Name="AppRoot" RequestedTheme="Dark" Background="{ThemeResource WindowBackgroundBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0"
+                Margin="12,12,12,8"
+                Padding="8,6"
+                Background="{ThemeResource ToolbarBackgroundBrush}"
+                BorderBrush="{ThemeResource ToolbarBorderBrush}"
+                BorderThickness="1"
+                CornerRadius="12">
+            <Grid MinHeight="48">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" Spacing="8">
+                    <CommandBar VerticalAlignment="Center"
+                                Background="Transparent"
+                                Foreground="{ThemeResource ToolbarForegroundBrush}"
+                                BorderThickness="0"
+                                DefaultLabelPosition="Right"
+                                OverflowButtonVisibility="Collapsed">
+                        <AppBarButton x:Name="UndoButton" Style="{StaticResource ToolbarButtonStyle}" Icon="Undo" Click="Undo_Click" />
+                        <AppBarButton x:Name="RedoButton" Style="{StaticResource ToolbarButtonStyle}" Icon="Redo" Click="Redo_Click" />
+                        <AppBarSeparator />
+                        <AppBarButton x:Name="LoadSampleButton" AutomationProperties.AutomationId="LoadSampleButton"
+                                      Style="{StaticResource ToolbarButtonStyle}" Icon="Document" Click="LoadSample_Click" />
+                    </CommandBar>
+                    <DropDownButton x:Name="ViewOptionsButton" Content="View Options"
+                                    AutomationProperties.AutomationId="ViewOptionsButton"
+                                    VerticalAlignment="Center" MinHeight="32" Margin="0,0,2,0">
+                        <DropDownButton.Flyout>
+                            <MenuFlyout>
+                                <ToggleMenuFlyoutItem x:Name="WordWrapToggle" Text="Word Wrap" Tag="wordWrap"
+                                      AutomationProperties.AutomationId="Option_wordWrap" Click="EditorFeature_Click" />
+                                <ToggleMenuFlyoutItem x:Name="WhitespaceToggle" Text="Render Whitespace" Tag="whitespace"
+                                      AutomationProperties.AutomationId="Option_whitespace" Click="EditorFeature_Click" />
+                                <ToggleMenuFlyoutItem x:Name="MinimapToggle" Text="Minimap" Tag="minimap"
+                                      AutomationProperties.AutomationId="Option_minimap" Click="EditorFeature_Click" />
+                                <ToggleMenuFlyoutItem x:Name="IndentGuidesToggle" Text="Indent Guides" Tag="indentGuides"
+                                      AutomationProperties.AutomationId="Option_indentGuides" Click="EditorFeature_Click" />
+                                <ToggleMenuFlyoutItem x:Name="FoldingToggle" Text="Code Folding" Tag="folding"
+                                      AutomationProperties.AutomationId="Option_folding" Click="EditorFeature_Click" />
+                                <MenuFlyoutSeparator />
+                                <ToggleMenuFlyoutItem x:Name="OverviewToggle" Text="Overview Ruler" Tag="overview"
+                                      AutomationProperties.AutomationId="Option_overview" Click="EditorFeature_Click" />
+                                <ToggleMenuFlyoutItem x:Name="BracketColorsToggle" Text="Bracket Pair Colors" Tag="bracketColors"
+                                      AutomationProperties.AutomationId="Option_bracketColors" Click="EditorFeature_Click" />
+                                <ToggleMenuFlyoutItem x:Name="CodeLensToggle" Text="CodeLens" Tag="codeLens"
+                                      AutomationProperties.AutomationId="Option_codeLens" Click="EditorFeature_Click" />
+                                <ToggleMenuFlyoutItem x:Name="InlineCompletionToggle" Text="Inline Completion" Tag="inlineCompletion"
+                                      AutomationProperties.AutomationId="Option_inlineCompletion" Click="EditorFeature_Click" />
+                                <ToggleMenuFlyoutItem x:Name="StickyScrollToggle" Text="Sticky Scroll" Tag="stickyScroll"
+                                      AutomationProperties.AutomationId="Option_stickyScroll" Click="EditorFeature_Click" />
+                            </MenuFlyout>
+                        </DropDownButton.Flyout>
+                    </DropDownButton>
+                    <Button x:Name="FormatSampleButton" Content="Format" Click="FormatSample_Click" MinHeight="32" VerticalAlignment="Center"
+                            AutomationProperties.AutomationId="FormatSampleButton" />
+                    <TextBlock x:Name="SampleLabel" Text="Example" VerticalAlignment="Center" Margin="6,0,0,0" />
+                    <ComboBox x:Name="SampleBox" Width="148" VerticalAlignment="Center"
+                              AutomationProperties.AutomationId="SampleBox"
+                              SelectionChanged="SampleBox_SelectionChanged" />
+                </StackPanel>
+
+                <StackPanel Grid.Column="1"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            HorizontalAlignment="Right"
+                            Margin="16,0,4,0"
+                            Spacing="10">
+                    <ToggleButton x:Name="ProfilerToggle" AutomationProperties.AutomationId="ProfilerToggle"
+                                  Content="Profile: OFF" MinWidth="96" Height="32"
+                                  VerticalAlignment="Center" CornerRadius="7"
+                                  Foreground="{ThemeResource ToolbarForegroundBrush}"
+                                  Checked="ProfilerToggle_Changed" Unchecked="ProfilerToggle_Changed" />
+                    <Button x:Name="ExportProfileButton" AutomationProperties.AutomationId="ExportProfileButton"
+                            Content="Export" MinWidth="70" Height="32"
+                            VerticalAlignment="Center" CornerRadius="7"
+                            Foreground="{ThemeResource ToolbarForegroundBrush}"
+                            Click="ExportProfileButton_Click" />
+                    <TextBlock x:Name="ThemeLabel" Style="{StaticResource ToolbarLabelStyle}" />
+                    <ComboBox x:Name="ThemeBox" AutomationProperties.AutomationId="ThemeBox"
+                              Style="{StaticResource ToolbarComboBoxStyle}"
+                              SelectionChanged="ThemeBox_SelectionChanged" />
+                    <TextBlock x:Name="UiLanguageLabel" Style="{StaticResource ToolbarLabelStyle}" />
+                    <ComboBox x:Name="UiLanguageBox"
+                              Style="{StaticResource ToolbarComboBoxStyle}"
+                              MinWidth="120"
+                              SelectionChanged="UiLanguageBox_SelectionChanged" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1" Margin="12,0,12,8" ColumnSpacing="10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="274" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Border Grid.Column="0" CornerRadius="10" BorderThickness="1"
+                    BorderBrush="{ThemeResource ToolbarBorderBrush}"
+                    Background="{ThemeResource ToolbarBackgroundBrush}">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Padding="14" Spacing="8">
+                        <TextBlock x:Name="CommandAccessHeader" Text="COMMAND ACCESS" FontWeight="SemiBold" FontSize="13" />
+                        <TextBlock x:Name="CommandAccessDescription" Text="Advanced commands: context menu + shortcut / shortcut only / disabled."
+                                   TextWrapping="Wrap" FontSize="11" Opacity="0.7" />
+                        <Button x:Name="FindSidebarButton" Content="Find (Ctrl+F)" Click="Find_Click" HorizontalAlignment="Stretch"
+                                AutomationProperties.AutomationId="OpenFindButton" />
+                        <Button x:Name="ReplaceSidebarButton" Content="Replace (Ctrl+H)" Click="Replace_Click" HorizontalAlignment="Stretch"
+                                AutomationProperties.AutomationId="OpenReplaceButton" />
+                        <TextBlock x:Name="AdvancedPolicyHeader" Text="ADVANCED ACTION POLICY" FontWeight="SemiBold"
+                                   FontSize="12" Margin="0,9,0,0" />
+                        <TextBlock x:Name="AdvancedPolicyDescription" Text="Default: Shortcut only. Choosing Disabled also blocks registered shortcuts."
+                                   TextWrapping="Wrap" FontSize="11" Opacity="0.7" />
+                        <StackPanel x:Name="MenuOptionsPanel" Spacing="4" />
+                        <TextBlock x:Name="LanguageServicesHeader" Text="LANGUAGE SERVICES" FontWeight="SemiBold" FontSize="12" Margin="0,9,0,0" />
+                        <TextBlock x:Name="LanguageServiceStatus" TextWrapping="Wrap" FontSize="11" />
+                    </StackPanel>
+                </ScrollViewer>
+            </Border>
+            <renderer:MonacoEditor x:Name="Editor" AutomationProperties.AutomationId="MonacoEditorSurface"
+                                   Grid.Column="1" RequestedTheme="Dark">
+                <!-- Mode also gates keyboard command execution, unlike legacy Visibility/IsEnabled.
+                     Default for non-basic, non-toggle commands: ShortcutOnly. -->
+                <renderer:MonacoEditor.ContextMenuItemOptions>
+                    <renderer:EditorContextMenuItemOptions CommandId="editor.action.clipboardPasteAction"
+                                                           Mode="ContextMenuAndShortcut" />
+                    <!-- Toggle commands remain executable but are absent from the editor context menu
+                         unless their Mode is changed to ContextMenuAndShortcut at runtime/XAML. -->
+                    <renderer:EditorContextMenuItemOptions CommandId="editor.action.toggleMinimap" Mode="ShortcutOnly" />
+                    <renderer:EditorContextMenuItemOptions CommandId="editor.action.rename"
+                                                           Mode="ShortcutOnly" />
+                </renderer:MonacoEditor.ContextMenuItemOptions>
+            </renderer:MonacoEditor>
+        </Grid>
+
+        <Border Grid.Row="2"
+                Margin="12,0,12,12"
+                Padding="10,7"
+                Background="{ThemeResource StatusBackgroundBrush}"
+                BorderBrush="{ThemeResource StatusBorderBrush}"
+                BorderThickness="1"
+                CornerRadius="10">
+            <Grid ColumnSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="StatusText" AutomationProperties.AutomationId="EditorStatus"
+                           Foreground="{ThemeResource StatusForegroundBrush}" />
+                <TextBlock x:Name="ProfileReportHint" Grid.Column="1" MaxWidth="380"
+                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                           Foreground="{ThemeResource StatusForegroundBrush}" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

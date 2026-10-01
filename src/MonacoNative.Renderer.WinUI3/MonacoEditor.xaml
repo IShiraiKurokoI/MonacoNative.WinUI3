@@ -1,0 +1,156 @@
+<UserControl
+    x:Class="MonacoNative.Renderer.WinUI3.MonacoEditor"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:canvas="using:Microsoft.Graphics.Canvas.UI.Xaml"
+    IsTabStop="True"
+    Loaded="Editor_Loaded"
+    Unloaded="Editor_Unloaded"
+    SizeChanged="Editor_SizeChanged"
+    KeyDown="Editor_KeyDown"
+    KeyUp="Editor_KeyUp"
+    CharacterReceived="Editor_CharacterReceived"
+    GotFocus="Editor_GotFocus"
+    LostFocus="Editor_LostFocus">
+    <UserControl.Resources>
+        <Style x:Key="EditorMenuFlyoutPresenterStyle" TargetType="MenuFlyoutPresenter">
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="4" />
+            <Setter Property="MinWidth" Value="220" />
+        </Style>
+        <Style x:Key="EditorMenuFlyoutItemStyle" TargetType="MenuFlyoutItem">
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="MinHeight" Value="32" />
+            <Setter Property="Padding" Value="10,4" />
+        </Style>
+        <Style x:Key="EditorCompactButtonStyle" TargetType="Button">
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+    </UserControl.Resources>
+    <Border x:Name="EditorChrome" BorderBrush="#3F3F46" BorderThickness="1" CornerRadius="8" Background="#1E1E1E">
+        <Grid x:Name="SurfaceRoot" Background="Transparent"
+              PointerEntered="SurfaceRoot_PointerEntered"
+              PointerExited="SurfaceRoot_PointerExited"
+              PointerPressed="SurfaceRoot_PointerPressed"
+              PointerReleased="SurfaceRoot_PointerReleased"
+              PointerCaptureLost="SurfaceRoot_PointerCaptureLost"
+              PointerCanceled="SurfaceRoot_PointerCaptureLost">
+            <canvas:CanvasSwapChainPanel x:Name="SwapChainPanel" IsHitTestVisible="False" />
+            <ScrollViewer x:Name="ScrollHost"
+                          Background="Transparent"
+                          HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollMode="Enabled"
+                          VerticalScrollMode="Enabled"
+                          ZoomMode="Disabled"
+                          ViewChanged="ScrollHost_ViewChanged">
+                <Grid x:Name="ScrollExtent" Width="1" Height="1" Background="Transparent" />
+            </ScrollViewer>
+
+            <!-- Contribution presenters are native WinUI overlays. The canvas has no
+                 background, so only its child presenters participate in hit testing. -->
+            <Canvas x:Name="ContributionLayer" />
+
+            <Border x:Name="StickyScrollHost"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Top"
+                    Margin="58,0,96,0"
+                    Background="#F21E1E1E"
+                    BorderBrush="#3F3F46"
+                    BorderThickness="0,0,0,1"
+                    Visibility="Collapsed"
+                    IsHitTestVisible="False">
+                <StackPanel x:Name="StickyScrollPanel" />
+            </Border>
+
+            <!-- Find widget ends at the text viewport edge. The renderer reserves the
+                 Minimap + overview-ruler width dynamically in UpdateFindWidgetPlacement. -->
+            <Border x:Name="FindWidget"
+                    HorizontalAlignment="Right" VerticalAlignment="Top"
+                    Margin="0,8,112,0" Width="536" MaxWidth="536"
+                    Padding="7,6" Background="{ThemeResource TextControlBackground}"
+                    BorderBrush="{ThemeResource TextControlBorderBrush}"
+                    BorderThickness="1" CornerRadius="7" Visibility="Collapsed">
+                <Grid RowSpacing="4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="26" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="28" />
+                        <ColumnDefinition Width="28" />
+                        <ColumnDefinition Width="28" />
+                        <ColumnDefinition Width="28" />
+                        <ColumnDefinition Width="65" />
+                        <ColumnDefinition Width="28" />
+                        <ColumnDefinition Width="28" />
+                        <ColumnDefinition Width="28" />
+                    </Grid.ColumnDefinitions>
+                    <ToggleButton x:Name="FindReplaceExpander" Grid.Row="0" Grid.Column="0"
+                                  Width="26" Height="28" MinWidth="26" MinHeight="28"
+                                  Padding="0" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                  AutomationProperties.AutomationId="FindReplaceExpander"
+                                  Checked="FindReplaceExpander_Changed" Unchecked="FindReplaceExpander_Changed">
+                        <FontIcon x:Name="FindReplaceChevron" Glyph="&#xE76C;" FontSize="10" />
+                    </ToggleButton>
+                    <TextBox x:Name="FindTextBox" Grid.Row="0" Grid.Column="1" MinWidth="90" Height="28"
+                             Margin="3,0,2,0" Padding="6,2"
+                             AutomationProperties.AutomationId="FindTextBox"
+                             TextChanged="FindTextBox_TextChanged" KeyDown="FindTextBox_KeyDown" CornerRadius="4" />
+                    <ToggleButton x:Name="FindMatchCase" Grid.Row="0" Grid.Column="2" Width="27" Height="28" Padding="0"
+                                  Content="Aa" AutomationProperties.AutomationId="FindMatchCase"
+                                  Checked="FindOption_Changed" Unchecked="FindOption_Changed" />
+                    <ToggleButton x:Name="FindWholeWord" Grid.Row="0" Grid.Column="3" Width="27" Height="28" Padding="0"
+                                  Content="ab" AutomationProperties.AutomationId="FindWholeWord"
+                                  Checked="FindOption_Changed" Unchecked="FindOption_Changed" />
+                    <ToggleButton x:Name="FindRegex" Grid.Row="0" Grid.Column="4" Width="27" Height="28" Padding="0"
+                                  Content=".*" AutomationProperties.AutomationId="FindRegex"
+                                  Checked="FindOption_Changed" Unchecked="FindOption_Changed" />
+                    <ToggleButton x:Name="FindInSelection" Grid.Row="0" Grid.Column="5" Width="27" Height="28" Padding="0"
+                                  Content="▣" AutomationProperties.AutomationId="FindInSelection"
+                                  Checked="FindInSelection_Changed" Unchecked="FindInSelection_Changed" />
+                    <TextBlock x:Name="FindMatchCount" Grid.Row="0" Grid.Column="6"
+                               VerticalAlignment="Center" HorizontalAlignment="Center" FontSize="11"
+                               TextAlignment="Center" Text="—" TextTrimming="CharacterEllipsis"
+                               AutomationProperties.AutomationId="FindMatchCount" />
+                    <Button x:Name="FindPreviousButton" Grid.Row="0" Grid.Column="7" Width="27" Height="28" Padding="0"
+                            Click="FindPrevious_Click" Style="{StaticResource EditorCompactButtonStyle}" />
+                    <Button x:Name="FindNextButton" Grid.Row="0" Grid.Column="8" Width="27" Height="28" Padding="0"
+                            Click="FindNext_Click" Style="{StaticResource EditorCompactButtonStyle}" />
+                    <Button x:Name="FindCloseButton" Grid.Row="0" Grid.Column="9" Width="27" Height="28" Padding="0"
+                            Click="FindClose_Click" Style="{StaticResource EditorCompactButtonStyle}" />
+                    <Grid x:Name="ReplaceRow" Grid.Row="1" Grid.ColumnSpan="10" ColumnSpacing="2" Visibility="Collapsed">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="26" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="28" />
+                            <ColumnDefinition Width="28" />
+                            <ColumnDefinition Width="28" />
+                            <ColumnDefinition Width="28" />
+                            <ColumnDefinition Width="65" />
+                            <ColumnDefinition Width="28" />
+                            <ColumnDefinition Width="28" />
+                            <ColumnDefinition Width="28" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="ReplaceTextBox" Grid.Column="1" Height="28" Padding="6,2"
+                                 Margin="3,0,2,0" AutomationProperties.AutomationId="ReplaceTextBox" CornerRadius="4" />
+                        <ToggleButton x:Name="ReplacePreserveCase" Grid.Column="2" Width="27" Height="28" Padding="0"
+                                      Content="AB" AutomationProperties.AutomationId="ReplacePreserveCase" />
+                        <Button x:Name="ReplaceOneButton" Grid.Column="3" Width="27" Height="28" Padding="0"
+                                Click="ReplaceOne_Click" Style="{StaticResource EditorCompactButtonStyle}" />
+                        <Button x:Name="ReplaceAllButton" Grid.Column="4" Width="27" Height="28" Padding="0"
+                                Click="ReplaceAll_Click" Style="{StaticResource EditorCompactButtonStyle}" />
+                        <TextBlock x:Name="FindStatusMessage" Grid.Column="5" Grid.ColumnSpan="5"
+                                   VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                   FontSize="11" Foreground="#FFCC8080" />
+                    </Grid>
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
+</UserControl>

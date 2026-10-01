@@ -1,0 +1,24 @@
+{
+  "monacoEditorVersion": "0.57.0",
+  "vscodeRef": "6a598d4a13031703d483d103c1d934a36ad27971",
+  "baselineDate": "2026-09-24",
+  "windowsAppSdkNuGet": "2.4.0",
+  "cppWinRtNuGet": "3.0.260818.1",
+  "recorded057Items": [
+    "editor.wordWrapIndicator",
+    "editor.fullwidthCharacterWidth",
+    "languages.score",
+    "editor.DiffEditorViewMode",
+    "LifetimeSummary.isForAnotherDocument"
+  ],
+  "runtimePolicy": {
+    "webView": false,
+    "dom": false,
+    "javascriptRuntime": false,
+    "hiddenTextBoxBackingStore": false,
+    "nativeWinUI3": true,
+    "nativeDirectWrite": true,
+    "nativeDirect2D": true,
+    "standardReswLocalization": true
+  }
+}

@@ -1,0 +1,201 @@
+{
+  "schemaVersion": 1,
+  "policy": "Use upstream Monaco/VS Code operation IDs where an equivalent operation exists; use monacoNative.* only for host/accessibility/sample surfaces.",
+  "surfaces": [
+    {
+      "key": "monacoNative.sample.windowTitle",
+      "source": "MonacoNative - C# WinUI Host",
+      "kind": "host"
+    },
+    {
+      "key": "monacoNative.sample.action.loadSample",
+      "source": "Load Sample",
+      "kind": "host"
+    },
+    {
+      "key": "monacoNative.sample.uiLanguage",
+      "source": "UI Language",
+      "kind": "host"
+    },
+    {
+      "key": "monacoNative.sample.status",
+      "source": "Native core · v{0} · {1} lines · {2} UTF-16 units · IME {3} · input {4}",
+      "kind": "host"
+    },
+    {
+      "key": "monacoNative.accessibility.editor.name",
+      "source": "Code Editor",
+      "kind": "accessibility"
+    },
+    {
+      "key": "monacoNative.accessibility.editor.controlType",
+      "source": "code editor",
+      "kind": "accessibility"
+    },
+    {
+      "key": "monacoNative.accessibility.editor.help",
+      "source": "Editable code text. Use standard text navigation commands to move, select, and edit.",
+      "kind": "accessibility"
+    },
+    {
+      "key": "monacoNative.action.showColorPicker",
+      "source": "Show Color Picker",
+      "kind": "editor-contribution"
+    },
+    {
+      "key": "monacoNative.action.applyColor",
+      "source": "Apply Color",
+      "kind": "editor-contribution"
+    },
+    {
+      "key": "monacoNative.action.toggleStickyScroll",
+      "source": "Toggle Sticky Scroll",
+      "kind": "editor-contribution"
+    },
+    {
+      "key": "monacoNative.action.toggleCodeLens",
+      "source": "Toggle CodeLens",
+      "kind": "editor-contribution"
+    },
+    {
+      "key": "monacoNative.hideContributionWidget",
+      "source": "Hide Editor Widget",
+      "kind": "editor-contribution"
+    },
+    {
+      "key": "monacoNative.find.matchCase",
+      "source": "Match Case",
+      "kind": "editor-contribution"
+    },
+    {
+      "key": "monacoNative.find.wholeWord",
+      "source": "Match Whole Word",
+      "kind": "editor-contribution"
+    },
+    {
+      "key": "monacoNative.find.previous",
+      "source": "Previous Match",
+      "kind": "editor-contribution"
+    },
+    {
+      "key": "monacoNative.find.next",
+      "source": "Next Match",
+      "kind": "editor-contribution"
+    },
+    {
+      "key": "monacoNative.find.close",
+      "source": "Close",
+      "kind": "editor-contribution"
+    },
+    {
+      "key": "monacoNative.find.replaceOne",
+      "source": "Replace",
+      "kind": "editor-contribution"
+    },
+    {
+      "key": "monacoNative.find.replaceAll",
+      "source": "Replace All",
+      "kind": "editor-contribution"
+    },
+    {
+      "key": "monacoNative.rename.placeholder",
+      "source": "New symbol name",
+      "kind": "editor-contribution"
+    },
+    {
+      "key": "monacoNative.references.count",
+      "source": "{0} references",
+      "kind": "editor-contribution"
+    },
+    {
+      "key": "monacoNative.references.currentDocument",
+      "source": "current document",
+      "kind": "editor-contribution"
+    },
+    {
+      "key": "monacoNative.diff.original",
+      "source": "Original",
+      "kind": "diff-editor"
+    },
+    {
+      "key": "monacoNative.diff.modified",
+      "source": "Modified",
+      "kind": "diff-editor"
+    },
+    {
+      "key": "monacoNative.diff.previousChange",
+      "source": "Previous Change",
+      "kind": "diff-editor"
+    },
+    {
+      "key": "monacoNative.diff.nextChange",
+      "source": "Next Change",
+      "kind": "diff-editor"
+    },
+    {
+      "key": "monacoNative.diff.revertChange",
+      "source": "Revert Change",
+      "kind": "diff-editor"
+    },
+    {
+      "key": "monacoNative.diff.inlineView",
+      "source": "Inline View",
+      "kind": "diff-editor"
+    },
+    {
+      "key": "monacoNative.diff.sideBySideView",
+      "source": "Side by Side",
+      "kind": "diff-editor"
+    },
+    {
+      "key": "monacoNative.diff.toggleView",
+      "source": "Toggle Diff View",
+      "kind": "diff-editor"
+    },
+    {
+      "key": "monacoNative.diff.hideUnchanged",
+      "source": "Hide unchanged regions",
+      "kind": "diff-editor"
+    },
+    {
+      "key": "monacoNative.diff.identical",
+      "source": "No differences",
+      "kind": "diff-editor"
+    },
+    {
+      "key": "monacoNative.diff.summary",
+      "source": "{0} changes · {1} moved blocks",
+      "kind": "diff-editor"
+    },
+    {
+      "key": "monacoNative.diff.currentChange",
+      "source": "change {0} of {1}",
+      "kind": "diff-editor"
+    },
+    {
+      "key": "monacoNative.diff.deletedLine",
+      "source": "Deleted line {0}: {1}",
+      "kind": "accessibility"
+    },
+    {
+      "key": "monacoNative.diff.accessibility.name",
+      "source": "Diff Editor",
+      "kind": "accessibility"
+    },
+    {
+      "key": "monacoNative.diff.accessibility.original",
+      "source": "Original side of diff",
+      "kind": "accessibility"
+    },
+    {
+      "key": "monacoNative.diff.accessibility.modified",
+      "source": "Modified side of diff",
+      "kind": "accessibility"
+    },
+    {
+      "key": "monacoNative.diff.accessibility.inline",
+      "source": "Inline diff view",
+      "kind": "accessibility"
+    }
+  ]
+}

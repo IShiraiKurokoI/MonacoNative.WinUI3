@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "monacoEditorVersion": "0.57.0",
+  "surface": "editor.IDiffEditorBaseOptions",
+  "pinnedSemantics": {
+    "diffAlgorithm": ["advanced", "legacy", "advanced-external", "advanced-wasm"],
+    "renderSideBySideDefault": true,
+    "enableSplitViewResizingDefault": true,
+    "splitViewDefaultRatio": 0.5,
+    "renderIndicatorsDefault": true,
+    "renderMarginRevertIconDefault": true,
+    "renderOverviewRulerDefault": true,
+    "originalEditableDefault": false,
+    "showMovesDefault": false,
+    "hideUnchangedRegions": ["enabled", "contextLineCount", "minimumLineCount", "revealLineCount"]
+  },
+  "nativeDiffMapping": {
+    "diffAlgorithm": "native bounded Myers line diff plus character-level inner diff",
+    "renderSideBySide": "MonacoDiffEditor side-by-side mode",
+    "synchronizedScrolling": "model-line mapped viewport synchronization",
+    "renderMarginRevertIcon": "native WinUI revert buttons",
+    "hideUnchangedRegions": "native ViewModel hidden areas with retained context",
+    "showMoves": "native exact moved-block classification",
+    "accessibleDiffViewer": "WinUI AutomationProperties summary and per-side annotations"
+  }
+}

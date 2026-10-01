@@ -1,0 +1,39 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <_MonacoNativeWinRTWinMD>$(MSBuildThisFileDirectory)MonacoNative.WinRT.winmd</_MonacoNativeWinRTWinMD>
+    <_MonacoNativeWinRTArch Condition="'$(Platform)' == 'ARM64'">arm64</_MonacoNativeWinRTArch>
+    <_MonacoNativeWinRTArch Condition="'$(_MonacoNativeWinRTArch)' == '' And '$(Platform)' == 'x64'">x64</_MonacoNativeWinRTArch>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="MonacoNative.WinRT">
+      <HintPath>$(_MonacoNativeWinRTWinMD)</HintPath>
+      <IsWinMDFile>true</IsWinMDFile>
+      <WinMDFile>true</WinMDFile>
+      <Private>false</Private>
+      <SpecificVersion>false</SpecificVersion>
+    </Reference>
+    <None Include="$(MSBuildThisFileDirectory)..\..\runtimes\win-$(_MonacoNativeWinRTArch)\native\MonacoNative.WinRT.Component.dll"
+          Link="MonacoNative.WinRT.Component.dll"
+          CopyToOutputDirectory="PreserveNewest"
+          Visible="false"
+          Condition="'$(_MonacoNativeWinRTArch)' != '' And Exists('$(MSBuildThisFileDirectory)..\..\runtimes\win-$(_MonacoNativeWinRTArch)\native\MonacoNative.WinRT.Component.dll')" />
+  </ItemGroup>
+  <Target Name="MonacoNativeWinRTValidatePackageAssets" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(_MonacoNativeWinRTWinMD)')"
+           Text="MonacoNative.WinRT.CoreHost is missing its WinMD: $(_MonacoNativeWinRTWinMD). Check the NuGet package contents." />
+  </Target>
+  <!-- C++/WinRT only generates winrt/MonacoNative.WinRT.h when its resolved
+       references include the WinMD, not the similarly named native DLL. -->
+  <Target Name="MonacoNativeWinRTValidateProjectionInputs" AfterTargets="GetCppWinRTDirectWinMDReferences">
+    <!-- Other WinMD references must not mask a missing MonacoNative metadata file. -->
+    <ItemGroup>
+      <_MonacoNativeCoreHostWinMD Include="@(CppWinRTDirectWinMDReferences)"
+          Condition="'%(CppWinRTDirectWinMDReferences.Filename)' == 'MonacoNative.WinRT'" />
+    </ItemGroup>
+    <Error Condition="'@(_MonacoNativeCoreHostWinMD)' == ''"
+           Text="C++/WinRT did not resolve MonacoNative.WinRT.winmd for projection generation. Check the NuGet package Reference HintPath and WinMDFile metadata." />
+  </Target>
+  <Target Name="MonacoNativeWinRTValidateArchitecture" BeforeTargets="Build">
+    <Error Condition="'$(_MonacoNativeWinRTArch)' == ''" Text="MonacoNative.WinRT.CoreHost supports x64 and ARM64 only." />
+  </Target>
+</Project>

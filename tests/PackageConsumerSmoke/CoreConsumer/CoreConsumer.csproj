@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <Platforms>x64;ARM64</Platforms>
+    <PlatformTarget>$(Platform)</PlatformTarget>
+    <RuntimeIdentifier Condition="'$(Platform)' == 'x64'">win-x64</RuntimeIdentifier>
+    <RuntimeIdentifier Condition="'$(Platform)' == 'ARM64'">win-arm64</RuntimeIdentifier>
+    <WindowsPackageType>None</WindowsPackageType>
+    <!-- This is a headless Core-only smoke test. The transitive WinUI package
+         brings WindowsAppSDK, whose default exe bootstrapper may show a modal
+         "install runtime" UI on clean hosted runners before Main() starts.
+         The WinUI consumer is built separately; it is never run by this test. -->
+    <WindowsAppSdkBootstrapInitialize>false</WindowsAppSdkBootstrapInitialize>
+    <WindowsAppSdkDeploymentManagerInitialize>false</WindowsAppSdkDeploymentManagerInitialize>
+    <WindowsAppSdkUndockedRegFreeWinRTInitialize>false</WindowsAppSdkUndockedRegFreeWinRTInitialize>
+    <WindowsAppSDKBootstrapAutoInitializeOptions_OnNoMatch_ShowUI>false</WindowsAppSDKBootstrapAutoInitializeOptions_OnNoMatch_ShowUI>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <MonacoNativePackageVersion Condition="'$(MonacoNativePackageVersion)' == ''">0.1.0</MonacoNativePackageVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="MonacoNative.WinUI3" Version="$(MonacoNativePackageVersion)" />
+  </ItemGroup>
+</Project>

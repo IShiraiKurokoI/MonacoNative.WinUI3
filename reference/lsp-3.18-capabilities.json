@@ -1,0 +1,52 @@
+{
+  "stage": 9,
+  "protocolBaseline": "LSP 3.18 capability shape; common 3.17 servers expected to interoperate for implemented methods",
+  "positionEncoding": "utf-16",
+  "transports": [
+    "stdio",
+    "named-pipe",
+    "tcp",
+    "stream"
+  ],
+  "lifecycle": [
+    "initialize",
+    "initialized",
+    "shutdown",
+    "exit",
+    "$/cancelRequest"
+  ],
+  "synchronization": [
+    "didOpen",
+    "didChange-full",
+    "didChange-incremental",
+    "didClose"
+  ],
+  "providers": [
+    "completion",
+    "hover",
+    "signatureHelp",
+    "definition",
+    "references",
+    "prepareRename",
+    "rename",
+    "formatting",
+    "rangeFormatting",
+    "semanticTokens/full",
+    "inlayHint",
+    "codeAction",
+    "publishDiagnostics"
+  ],
+  "notAdvertisedOrDeferred": [
+    "snippetSupport",
+    "completionItem/resolve",
+    "codeAction/resolve",
+    "inlayHint/resolve",
+    "workspace/applyEdit",
+    "didSave",
+    "semanticTokens/range",
+    "semanticTokens/full/delta",
+    "workspace resource operations",
+    "dynamicRegistration",
+    "pull diagnostics"
+  ]
+}

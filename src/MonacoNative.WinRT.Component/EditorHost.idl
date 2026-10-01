@@ -1,0 +1,21 @@
+namespace MonacoNative.WinRT
+{
+    runtimeclass EditorHost
+    {
+        EditorHost();
+        EditorHost(String text, String languageId);
+
+        String Text;
+        String LanguageId;
+        UInt64 Length { get; };
+        UInt64 LineCount { get; };
+        UInt64 VersionId { get; };
+        Boolean CanUndo { get; };
+        Boolean CanRedo { get; };
+
+        void Replace(UInt64 startOffset, UInt64 endOffset, String text);
+        Boolean Undo();
+        Boolean Redo();
+        void PushUndoStop();
+    }
+}

@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "notes": "Interactive Windows validation. Portable range semantics are automated separately.",
+  "cases": [
+    {"id":"narrator-document-read","client":"Windows Narrator","expect":"Editor is announced as a code editor/document and document text can be read."},
+    {"id":"narrator-caret-selection","client":"Windows Narrator","expect":"Caret and selection changes are announced without polling."},
+    {"id":"uia-visible-ranges","client":"Accessibility Insights/UIA client","expect":"Visible ranges track scrolling and wrapped lines."},
+    {"id":"uia-range-from-point","client":"Accessibility Insights/UIA client","expect":"Screen points map to UTF-16 text ranges using rendered geometry."},
+    {"id":"uia-bounding-rectangles","client":"Accessibility Insights/UIA client","expect":"A range returns one clipped screen rectangle per visible visual line."},
+    {"id":"ime-textedit","client":"Narrator + Microsoft Pinyin/Japanese/Korean IME","expect":"Active composition and conversion target are exposed through TextEdit."},
+    {"id":"high-contrast-screen-reader","client":"Narrator","expect":"High contrast rendering retains the same UIA text document and selection semantics."},
+    {"id":"pseudo-locale","client":"qps-ploc","expect":"All localized sample/accessibility surfaces expand while format placeholders remain intact."}
+  ]
+}

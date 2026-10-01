@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "monacoEditorVersion": "0.57.0",
+  "vscodeRef": "6a598d4a13031703d483d103c1d934a36ad27971",
+  "policy": "Compare algorithm/data-flow/asymptotic responsibilities, not browser-vs-WinUI implementation technology or raw cross-language wall-clock numbers.",
+  "upstreamAnchors": [
+    {
+      "id": "piece_tree_model_buffer",
+      "source": "src/vs/editor/common/model/pieceTreeTextBuffer/pieceTreeTextBuffer.ts",
+      "url": "https://raw.githubusercontent.com/microsoft/vscode/6a598d4a13031703d483d103c1d934a36ad27971/src/vs/editor/common/model/pieceTreeTextBuffer/pieceTreeTextBuffer.ts",
+      "referenceFacts": [
+        "getOffsetAt/getPositionAt delegate to PieceTreeBase",
+        "applyEdits validates/sorts edits and applies descending to the piece tree",
+        "very large edit sets are reduced instead of blindly applying thousands of overlapping temporary edits"
+      ],
+      "localEvidence": [
+        "benchmarks/CoreBenchmarks/main.cpp",
+        "tests/CoreTests/PieceTreeTests.cpp",
+        "tests/CoreTests/TextModelTests.cpp"
+      ]
+    },
+    {
+      "id": "view_projection_prefix_mapping",
+      "source": "src/vs/editor/common/viewModel/viewModelLines.ts",
+      "url": "https://raw.githubusercontent.com/microsoft/vscode/6a598d4a13031703d483d103c1d934a36ad27971/src/vs/editor/common/viewModel/viewModelLines.ts",
+      "referenceFacts": [
+        "one projection object is stored per model line",
+        "a prefix-sum structure maps model-line projection counts to global view-line identities",
+        "single-line changes replace one projection and update one prefix value",
+        "structural model-line insertions splice the outer projection array and prefix values"
+      ],
+      "localEvidence": [
+        "src/MonacoNative.Core/include/MonacoNative/Core/ViewModel.h",
+        "src/MonacoNative.Core/src/ViewModel.cpp",
+        "reference/performance-budgets-core.json"
+      ]
+    },
+    {
+      "id": "decoration_interval_queries",
+      "source": "src/vs/editor/common/model/intervalTree.ts",
+      "url": "https://raw.githubusercontent.com/microsoft/vscode/6a598d4a13031703d483d103c1d934a36ad27971/src/vs/editor/common/model/intervalTree.ts",
+      "referenceFacts": [
+        "decorations are queried through interval-search structures rather than full-list scans per visible line"
+      ],
+      "localEvidence": [
+        "src/MonacoNative.Renderer.WinUI3/LineRangeIndex.cs",
+        "src/MonacoNative.Renderer.WinUI3/MonacoEditor.Language.cs",
+        "src/MonacoNative.Renderer.WinUI3/MonacoEditor.Diff.cs"
+      ]
+    },
+    {
+      "id": "keybinding_first_chord_resolution",
+      "source": "src/vs/platform/keybinding/common/keybindingResolver.ts",
+      "url": "https://raw.githubusercontent.com/microsoft/vscode/6a598d4a13031703d483d103c1d934a36ad27971/src/vs/platform/keybinding/common/keybindingResolver.ts",
+      "referenceFacts": [
+        "bindings are indexed by first chord",
+        "candidate/context resolution searches the first-chord bucket",
+        "matching candidates are examined from highest precedence toward lower precedence"
+      ],
+      "localEvidence": [
+        "src/MonacoNative.Core/include/MonacoNative/Core/Commands.h",
+        "src/MonacoNative.Core/src/Commands.cpp",
+        "tests/CoreTests/CommandTests.cpp"
+      ]
+    }
+  ],
+  "acceptedPlatformDifferences": [
+    {
+      "area": "rendering",
+      "difference": "Win2D/DirectWrite command-list ViewParts replace DOM/browser view parts.",
+      "acceptance": "Allowed when dirty-layer boundaries and visible-work asymptotics remain bounded."
+    },
+    {
+      "area": "desktop_text_input",
+      "difference": "Windows TSF ITextStoreACP2/ITfKeystrokeMgr replaces browser textarea/EditContext integration.",
+      "acceptance": "Platform adaptation; Monaco model/selection/undo responsibilities remain authoritative."
+    },
+    {
+      "area": "structural_projection_splice",
+      "difference": "The outer per-model-line projection vector can move suffix slots on model-line insertion/deletion.",
+      "acceptance": "Matches Monaco 0.57 modelLineProjections array splice complexity shape; unchanged view-line payloads are not globally renumbered/rebuilt."
+    },
+    {
+      "area": "absolute_timing",
+      "difference": "Native C++/DirectWrite wall-clock numbers are not compared numerically to JS/browser timings.",
+      "acceptance": "Release gates use deterministic work counts and asymptotic behavior; wall-clock is trend evidence only."
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<package>
+  <metadata>
+    <id>MonacoNative.WinRT.CoreHost</id>
+    <version>$version$</version>
+    <authors>MonacoNative</authors>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <license type="file">LICENSE</license>
+    <readme>README.md</readme>
+    <description>C++/WinRT runtime component exposing the MonacoNative native editor core through a stable Windows Runtime EditorHost.</description>
+    <tags>monaco editor native cppwinrt winrt component</tags>
+    <dependencies>
+      <group targetFramework="native">
+        <dependency id="Microsoft.Windows.CppWinRT" version="[3.0.260818.1]" />
+      </group>
+    </dependencies>
+    <!-- The native WinMD is an input to C++/WinRT projection, provided via
+         build/native MSBuild targets. It is not a NuGet compile reference. -->
+  </metadata>
+  <files>
+    <file src="..\LICENSE" target="LICENSE" />
+    <file src="..\README.md" target="README.md" />
+    <!-- This native package has no managed compile assembly; NuGet recognizes _._
+         as the empty lib/native TFM marker matching the native dependency group. -->
+    <file src="empty\_._" target="lib\native\_._" />
+    <file src="..\artifacts\winrt\x64\$configuration$\MonacoNative.WinRT.winmd" target="build\native\MonacoNative.WinRT.winmd" />
+    <file src="..\artifacts\winrt\x64\$configuration$\MonacoNative.WinRT.Component.dll" target="runtimes\win-x64\native" />
+    <file src="..\artifacts\winrt\ARM64\$configuration$\MonacoNative.WinRT.Component.dll" target="runtimes\win-arm64\native" />
+    <file src="buildTransitive\MonacoNative.WinRT.CoreHost.targets" target="build\native\MonacoNative.WinRT.CoreHost.targets" />
+  </files>
+</package>

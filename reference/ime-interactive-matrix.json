@@ -1,0 +1,274 @@
+{
+  "schemaVersion": 1,
+  "stage": "11-native-input-5c-tsf-only",
+  "automation": {
+    "portableProject": "tests/InputTests/MonacoNative.Input.Tests.csproj",
+    "windowsProject": "tests/ManagedTests/MonacoNative.Managed.Tests.csproj"
+  },
+  "cases": [
+    {
+      "id": "microsoft-pinyin",
+      "language": "zh-CN",
+      "inputMethod": "Microsoft Pinyin",
+      "scenario": "Compose zhongwen shuru, inspect candidates, commit Chinese text",
+      "expected": [
+        "composition underline visible",
+        "candidate window follows painted Monaco caret during scroll and wrap",
+        "candidate selection commits Chinese text",
+        "single undo reverts committed composition"
+      ],
+      "backends": [
+        "nativeTsf"
+      ]
+    },
+    {
+      "id": "microsoft-wubi",
+      "language": "zh-CN",
+      "inputMethod": "Microsoft Wubi",
+      "scenario": "Compose and commit Han text",
+      "expected": [
+        "composition range remains UTF-16 aligned",
+        "candidate window follows caret",
+        "single undo"
+      ],
+      "backends": [
+        "nativeTsf"
+      ]
+    },
+    {
+      "id": "microsoft-japanese-ime",
+      "language": "ja-JP",
+      "inputMethod": "Microsoft IME",
+      "scenario": "Enter hiragana, convert a target segment to kanji, commit",
+      "expected": [
+        "hiragana preedit remains model-aligned",
+        "candidate window follows painted Monaco caret",
+        "selected proxy text can be reconverted through the native IME",
+        "single undo"
+      ],
+      "backends": [
+        "nativeTsf"
+      ]
+    },
+    {
+      "id": "microsoft-korean-ime",
+      "language": "ko-KR",
+      "inputMethod": "Microsoft IME",
+      "scenario": "Compose Hangul syllables and commit",
+      "expected": [
+        "intermediate composition updates do not echo",
+        "underline remains stable",
+        "single undo"
+      ],
+      "backends": [
+        "nativeTsf"
+      ]
+    },
+    {
+      "id": "emoji-panel",
+      "language": "und",
+      "inputMethod": "Windows emoji panel",
+      "scenario": "Insert supplementary emoji, ZWJ emoji and regional-indicator flag",
+      "expected": [
+        "no unmatched surrogate stored",
+        "caret remains on text-element boundaries"
+      ],
+      "backends": [
+        "nativeTsf"
+      ]
+    },
+    {
+      "id": "wrapped-candidate-geometry",
+      "language": "zh-CN",
+      "inputMethod": "Microsoft Pinyin",
+      "scenario": "Compose across a soft-wrapped long line while horizontally/vertically scrolled",
+      "expected": [
+        "LayoutBounds is absolute screen space and LayoutBoundsVisualPixels is viewport-relative visual pixels",
+        "range bounds cover visible wrapped fragments",
+        "candidate UI remains anchored"
+      ],
+      "backends": [
+        "nativeTsf"
+      ]
+    },
+    {
+      "id": "injected-text-candidate-geometry",
+      "language": "ja-JP",
+      "inputMethod": "Microsoft IME",
+      "scenario": "Compose next to injected text/inlay projection",
+      "expected": [
+        "IME range decorates model text only",
+        "candidate geometry uses model-to-view projection"
+      ],
+      "backends": [
+        "nativeTsf"
+      ]
+    },
+    {
+      "id": "focus-loss",
+      "language": "zh-CN",
+      "inputMethod": "Microsoft Pinyin",
+      "scenario": "Move focus during an active composition",
+      "expected": [
+        "server-visible text is preserved",
+        "composition transaction is closed",
+        "no stale underline remains"
+      ],
+      "backends": [
+        "nativeTsf"
+      ]
+    },
+    {
+      "id": "escape-cancel",
+      "language": "zh-CN",
+      "inputMethod": "Microsoft Pinyin",
+      "scenario": "Begin composition over a selected range, change preedit several times, press Escape",
+      "expected": [
+        "composition-start text is restored",
+        "composition-start primary selection is restored",
+        "no committed composition undo element remains",
+        "composition underline clears"
+      ],
+      "backends": [
+        "nativeTsf"
+      ]
+    },
+    {
+      "id": "command-routing",
+      "language": "en-US",
+      "inputMethod": "US keyboard",
+      "scenario": "Under each backend, use arrows, Ctrl+Z/C/V and an unmodified second-key chord",
+      "expected": [
+        "Monaco selection/commands execute exactly once",
+        "text-service adapter does not independently navigate or edit",
+        "plain printable text still enters through the active text service path",
+        "pending chord second key is not inserted as text"
+      ],
+      "backends": [
+        "nativeTsf"
+      ]
+    },
+    {
+      "id": "outer-transaction-cancel",
+      "language": "ja-JP",
+      "inputMethod": "Microsoft IME",
+      "scenario": "Start an outer MonacoNative undo transaction, make an unrelated edit, compose text, cancel composition with Escape, then commit the outer transaction",
+      "expected": [
+        "unrelated outer edit remains",
+        "only IME preedit is removed",
+        "outer transaction remains valid",
+        "later undo of outer transaction is consistent"
+      ],
+      "backends": [
+        "nativeTsf"
+      ]
+    },
+    {
+      "id": "japanese-reconversion",
+      "language": "ja-JP",
+      "inputMethod": "Microsoft IME",
+      "scenario": "Select an existing Japanese word in MonacoNative and invoke the IME reconversion command",
+      "expected": [
+        "selected text is mirrored exactly when it fits the bounded proxy window",
+        "native TextBox selection is the reconversion target",
+        "candidate/reconversion UI appears at the painted Monaco caret",
+        "committed replacement updates the Monaco selection and undo stack once"
+      ],
+      "backends": [
+        "nativeTsf"
+      ]
+    },
+    {
+      "id": "large-selection-bounded-proxy",
+      "language": "zh-CN",
+      "inputMethod": "Microsoft Pinyin",
+      "scenario": "Select more than 32768 UTF-16 code units in a multi-megabyte model, focus the editor, then type a replacement",
+      "expected": [
+        "focus/selection synchronization mirrors at most the bounded proxy window instead of the whole model",
+        "proxy is centered around the active caret",
+        "first actual text edit replaces the authoritative Monaco selection",
+        "proxy window recenters after commit/cancel"
+      ],
+      "backends": [
+        "nativeTsf"
+      ]
+    },
+    {
+      "id": "dead-key-layout",
+      "language": "en-US",
+      "inputMethod": "US-International keyboard",
+      "scenario": "Use apostrophe/quote dead key followed by a vowel and also AltGr combinations",
+      "expected": [
+        "OEM/dead-key presses remain text-service owned",
+        "only the committed composed character reaches the Monaco model",
+        "AltGr is not stolen by Ctrl+Alt command routing"
+      ],
+      "backends": [
+        "nativeTsf"
+      ]
+    },
+    {
+      "id": "unicode-window-edge",
+      "language": "und",
+      "inputMethod": "Windows emoji panel / hardware keyboard",
+      "scenario": "Move the active caret so a proxy recenter would otherwise cut through a surrogate pair, combining sequence, ZWJ emoji or regional-indicator flag",
+      "expected": [
+        "mirror start/end expand to full text-element boundaries",
+        "no unmatched surrogate enters the proxy or model",
+        "emoji/combining cluster remains intact across recentering"
+      ],
+      "backends": [
+        "nativeTsf"
+      ]
+    },
+    {
+      "id": "runtime-backend-switch",
+      "language": "en-US",
+      "inputMethod": "US keyboard",
+      "scenario": "With no active composition, switch SampleApp between Native TSF and TextBox proxy, refocus editor, type and undo",
+      "expected": [
+        "status reports the requested and actual backend",
+        "document text and primary selection survive the switch",
+        "typing remains available after each switch",
+        "undo stack remains coherent"
+      ],
+      "backends": [
+        "nativeTsf"
+      ]
+    },
+    {
+      "id": "candidate-scroll-dpi",
+      "language": "zh-CN",
+      "inputMethod": "Microsoft Pinyin",
+      "scenario": "Start composition, scroll vertically/horizontally, then move the window between monitors with different scale factors",
+      "expected": [
+        "candidate UI follows the painted caret after every scroll",
+        "screen-space geometry updates after monitor/DPI transition",
+        "no stale candidate anchor remains on the previous monitor"
+      ],
+      "backends": [
+        "nativeTsf"
+      ]
+    },
+    {
+      "id": "native-key-eaten-boundary",
+      "language": "en-US",
+      "inputMethod": "US / active IME toggled on and off",
+      "scenario": "Type plain Latin text, IME-owned keys and Monaco command chords while observing key handling",
+      "expected": [
+        "TSF-eaten keys do not reach Monaco twice",
+        "uneaten printable keys still reach CharacterReceived exactly once",
+        "command chords remain Monaco-owned when TSF does not eat them"
+      ],
+      "backends": [
+        "nativeTsf"
+      ]
+    }
+  ],
+  "backendGate": {
+    "requiredBackends": [
+      "nativeTsf"
+    ],
+    "releaseRule": "Every required Windows IME case must pass the nativeTsf backend before the final release gate is closed."
+  }
+}

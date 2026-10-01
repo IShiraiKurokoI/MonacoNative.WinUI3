@@ -1,0 +1,53 @@
+name: Package Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: NuGet version
+        required: true
+        default: 0.1.0
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '8.0.x'
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - name: Resolve package version
+        id: version
+        shell: pwsh
+        run: |
+          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
+            $v = '${{ inputs.version }}'
+          } else {
+            $v = '${{ github.ref_name }}'.TrimStart('v')
+          }
+          "version=$v" >> $env:GITHUB_OUTPUT
+      - name: Build x64 and ARM64 NuGet packages
+        shell: pwsh
+        run: ./scripts/pack-windows.ps1 -Configuration Release -Version '${{ steps.version.outputs.version }}'
+      - name: Test managed NuGet consumers and WinUI resources
+        shell: pwsh
+        run: ./scripts/test-package-managed-consumers.ps1 -Configuration Release -Version '${{ steps.version.outputs.version }}'
+      - name: Test C++/WinRT NuGet consumers
+        shell: pwsh
+        run: ./scripts/test-package-cpp-consumers.ps1 -Configuration Release -Version '${{ steps.version.outputs.version }}'
+      - name: Smoke test native core package runtime
+        shell: pwsh
+        run: ./scripts/test-package-core-runtime.ps1 -Configuration Release -Version '${{ steps.version.outputs.version }}'
+      - uses: actions/upload-artifact@v6
+        with:
+          name: MonacoNative-${{ steps.version.outputs.version }}
+          path: |
+            artifacts/packages/*.nupkg
+            artifacts/winrt/x64/Release/*.winmd
+          if-no-files-found: error

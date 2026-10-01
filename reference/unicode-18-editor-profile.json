@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "unicodeVersion": "18.0.0",
+  "uax29Revision": 49,
+  "profile": "MonacoNative editor segmentation profile",
+  "extendedGraphemeRules": [
+    "GB3",
+    "GB4",
+    "GB5",
+    "GB6",
+    "GB7",
+    "GB8",
+    "GB9",
+    "GB9a",
+    "GB9b",
+    "GB9c (Unicode 18)",
+    "GB11",
+    "GB12",
+    "GB13",
+    "GB999"
+  ],
+  "editorTailoring": {
+    "wordNavigation": "Monaco-style editor navigation; not a locale dictionary word-break conformance claim",
+    "cjk": "ideographs advance one extended grapheme cluster at a time",
+    "whitespace": "forward word movement skips trailing whitespace"
+  },
+  "conformance": {
+    "fullOfficialUcdVectorClaim": false,
+    "reason": "The implementation uses compact dependency-free property classification rather than generated complete Unicode 18 UCD tables."
+  },
+  "references": [
+    "https://www.unicode.org/versions/Unicode18.0.0/",
+    "https://www.unicode.org/reports/tr29/tr29-49.html",
+    "https://www.unicode.org/Public/18.0.0/ucd/auxiliary/GraphemeBreakProperty.txt"
+  ]
+}

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Debug|ARM64"><Configuration>Debug</Configuration><Platform>ARM64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|ARM64"><Configuration>Release</Configuration><Platform>ARM64</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{4C5C33A0-8F1B-4D60-BB16-0124E1390B72}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>MonacoNative.Input.Native</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformMinVersion>10.0.19041.0</WindowsTargetPlatformMinVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <PlatformToolset Condition="'$(VisualStudioVersion)' &gt;= '18.0'">v145</PlatformToolset>
+    <PlatformToolset Condition="'$(VisualStudioVersion)' &lt; '18.0'">v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Debug'" Label="Configuration"><UseDebugLibraries>true</UseDebugLibraries></PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)'=='Release'" Label="Configuration"><UseDebugLibraries>false</UseDebugLibraries><WholeProgramOptimization>true</WholeProgramOptimization></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <OutDir>$(ProjectDir)..\..\artifacts\native-input\$(Platform)\$(Configuration)\</OutDir>
+    <IntDir>$(ProjectDir)..\..\artifacts\obj\Input.Native\$(Platform)\$(Configuration)\</IntDir>
+    <TargetName>MonacoNative.Input.Native</TargetName>
+  </PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <ConformanceMode>true</ConformanceMode>
+      <PreprocessorDefinitions>UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;NOMINMAX;__INLINE_ISEQUAL_GUID;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(ProjectDir)include;$(ProjectDir)..\MonacoNative.Core\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Lib><AdditionalDependencies>ole32.lib;uuid.lib;%(AdditionalDependencies)</AdditionalDependencies></Lib>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="include\MonacoNative\Input\Native\AcpTextStoreBackend.h" />
+    <ClInclude Include="include\MonacoNative\Input\Native\AcpTextStoreGeometry.h" />
+    <ClInclude Include="include\MonacoNative\Input\Native\MemoryAcpTextStoreBackend.h" />
+    <ClInclude Include="include\MonacoNative\Input\Native\TextModelAcpTextStoreBackend.h" />
+    <ClInclude Include="include\MonacoNative\Input\Native\TsfTextStore.h" />
+    <ClInclude Include="include\MonacoNative\Input\Native\TsfDocumentSession.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\MemoryAcpTextStoreBackend.cpp" />
+    <ClCompile Include="src\TextModelAcpTextStoreBackend.cpp" />
+    <ClCompile Include="src\TsfTextStore.cpp" />
+    <ClCompile Include="src\TsfDocumentSession.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MonacoNative.Core\MonacoNative.Core.vcxproj">
+      <Project>{7E286878-F964-4B6E-8FD3-2AF594D83B1A}</Project>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>
