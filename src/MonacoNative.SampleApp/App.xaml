@@ -12,31 +12,31 @@
             </ResourceDictionary.MergedDictionaries>
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Light">
-                    <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#F5F5F7" />
-                    <SolidColorBrush x:Key="ToolbarBackgroundBrush" Color="#FAFAFC" />
-                    <SolidColorBrush x:Key="ToolbarBorderBrush" Color="#D7D7DC" />
-                    <SolidColorBrush x:Key="ToolbarForegroundBrush" Color="#1F1F23" />
+                    <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#F8F8F8" />
+                    <SolidColorBrush x:Key="ToolbarBackgroundBrush" Color="#F8F8F8" />
+                    <SolidColorBrush x:Key="ToolbarBorderBrush" Color="#E5E5E5" />
+                    <SolidColorBrush x:Key="ToolbarForegroundBrush" Color="#3B3B3B" />
                     <SolidColorBrush x:Key="StatusBackgroundBrush" Color="#FFFFFFFF" />
-                    <SolidColorBrush x:Key="StatusBorderBrush" Color="#D7D7DC" />
-                    <SolidColorBrush x:Key="StatusForegroundBrush" Color="#2C2C32" />
+                    <SolidColorBrush x:Key="StatusBorderBrush" Color="#E5E5E5" />
+                    <SolidColorBrush x:Key="StatusForegroundBrush" Color="#3B3B3B" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
-                    <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#18181B" />
-                    <SolidColorBrush x:Key="ToolbarBackgroundBrush" Color="#252526" />
-                    <SolidColorBrush x:Key="ToolbarBorderBrush" Color="#45454A" />
-                    <SolidColorBrush x:Key="ToolbarForegroundBrush" Color="#F3F3F3" />
-                    <SolidColorBrush x:Key="StatusBackgroundBrush" Color="#202024" />
-                    <SolidColorBrush x:Key="StatusBorderBrush" Color="#3B3B40" />
-                    <SolidColorBrush x:Key="StatusForegroundBrush" Color="#D0D0D4" />
+                    <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#181818" />
+                    <SolidColorBrush x:Key="ToolbarBackgroundBrush" Color="#181818" />
+                    <SolidColorBrush x:Key="ToolbarBorderBrush" Color="#2B2B2B" />
+                    <SolidColorBrush x:Key="ToolbarForegroundBrush" Color="#CCCCCC" />
+                    <SolidColorBrush x:Key="StatusBackgroundBrush" Color="#181818" />
+                    <SolidColorBrush x:Key="StatusBorderBrush" Color="#2B2B2B" />
+                    <SolidColorBrush x:Key="StatusForegroundBrush" Color="#CCCCCC" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Default">
-                    <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#18181B" />
-                    <SolidColorBrush x:Key="ToolbarBackgroundBrush" Color="#252526" />
-                    <SolidColorBrush x:Key="ToolbarBorderBrush" Color="#45454A" />
-                    <SolidColorBrush x:Key="ToolbarForegroundBrush" Color="#F3F3F3" />
-                    <SolidColorBrush x:Key="StatusBackgroundBrush" Color="#202024" />
-                    <SolidColorBrush x:Key="StatusBorderBrush" Color="#3B3B40" />
-                    <SolidColorBrush x:Key="StatusForegroundBrush" Color="#D0D0D4" />
+                    <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#181818" />
+                    <SolidColorBrush x:Key="ToolbarBackgroundBrush" Color="#181818" />
+                    <SolidColorBrush x:Key="ToolbarBorderBrush" Color="#2B2B2B" />
+                    <SolidColorBrush x:Key="ToolbarForegroundBrush" Color="#CCCCCC" />
+                    <SolidColorBrush x:Key="StatusBackgroundBrush" Color="#181818" />
+                    <SolidColorBrush x:Key="StatusBorderBrush" Color="#2B2B2B" />
+                    <SolidColorBrush x:Key="StatusForegroundBrush" Color="#CCCCCC" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
 

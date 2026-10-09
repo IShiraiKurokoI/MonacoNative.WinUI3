@@ -136,6 +136,9 @@ namespace MonacoNative::Input::Native
             return false;
         }
 
+        // TSF edits bypass the managed MonacoTextModel.Replace path. Preserve
+        // the actual pre-edit ACP selection, including its active-end direction.
+        const auto previousSelection = GetSelection();
         ++suppressExternalNotifications_;
         ++suppressCursorSelectionNotifications_;
         try
@@ -157,6 +160,12 @@ namespace MonacoNative::Input::Native
 
         const auto newEnd = start + static_cast<std::int32_t>(text.size());
         change = AcpTextChange{start, end, newEnd};
+        const Core::UndoSelection before{
+            static_cast<std::size_t>(previousSelection.activeEndAtStart ? previousSelection.end : previousSelection.start),
+            static_cast<std::size_t>(previousSelection.activeEndAtStart ? previousSelection.start : previousSelection.end),
+        };
+        const auto afterOffset = static_cast<std::size_t>(newEnd);
+        (void)model_->SetLatestUndoSelections({before}, {{afterOffset, afterOffset}});
 
         // The model event fires synchronously during ApplyOffsetEdits and may
         // transform the previous selection. A TSF replacement owns the final

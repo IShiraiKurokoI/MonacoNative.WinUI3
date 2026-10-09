@@ -151,6 +151,94 @@ namespace
         MN_CHECK(snapshot.versionId < model.VersionId());
         MN_CHECK_EQ(snapshot.languageId, std::string("cpp"));
     }
+
+    void UndoRedoRestoresCaretAtEachEdit()
+    {
+        TextModel model(u"ab\ncd");
+        MN_CHECK(model.LastRestoredSelections().empty());
+
+        model.ApplyOffsetEdits({OffsetEdit{5, 5, u"X"}});
+        MN_CHECK(model.SetLatestUndoSelections({{5, 5}}, {{6, 6}}));
+        model.ApplyOffsetEdits({OffsetEdit{6, 6, u"\nq"}});
+        MN_CHECK(model.SetLatestUndoSelections({{6, 6}}, {{8, 8}}));
+        MN_CHECK_EQ(model.GetValue(), std::u16string(u"ab\ncdX\nq"));
+
+        MN_CHECK(model.Undo());
+        MN_CHECK_EQ(model.LastRestoredSelections(), (std::vector<UndoSelection>{{6, 6}}));
+        MN_CHECK_EQ(model.GetPositionAt(model.LastRestoredSelections()[0].active), (Position{2, 4}));
+        MN_CHECK(model.Undo());
+        MN_CHECK_EQ(model.LastRestoredSelections(), (std::vector<UndoSelection>{{5, 5}}));
+        MN_CHECK_EQ(model.GetPositionAt(model.LastRestoredSelections()[0].active), (Position{2, 3}));
+        MN_CHECK(model.Redo());
+        MN_CHECK_EQ(model.LastRestoredSelections(), (std::vector<UndoSelection>{{6, 6}}));
+        MN_CHECK(model.Redo());
+        MN_CHECK_EQ(model.LastRestoredSelections(), (std::vector<UndoSelection>{{8, 8}}));
+        MN_CHECK_EQ(model.GetPositionAt(model.LastRestoredSelections()[0].active), (Position{3, 2}));
+    }
+
+    void UndoRedoSelectionDirectionAndDelete()
+    {
+        TextModel model(u"abcdef");
+        // Reversed selection replacing "cde".
+        model.ApplyOffsetEdits({OffsetEdit{2, 5, u"Z"}});
+        MN_CHECK(model.SetLatestUndoSelections({{5, 2}}, {{3, 3}}));
+        MN_CHECK_EQ(model.GetValue(), std::u16string(u"abZf"));
+        MN_CHECK(model.Undo());
+        MN_CHECK_EQ(model.GetValue(), std::u16string(u"abcdef"));
+        MN_CHECK_EQ(model.LastRestoredSelections(), (std::vector<UndoSelection>{{5, 2}}));
+        MN_CHECK(model.Redo());
+        MN_CHECK_EQ(model.LastRestoredSelections(), (std::vector<UndoSelection>{{3, 3}}));
+
+        // Backspace records the original caret after the deleted character.
+        model.ApplyOffsetEdits({OffsetEdit{1, 2, u""}});
+        MN_CHECK(model.SetLatestUndoSelections({{2, 2}}, {{1, 1}}));
+        MN_CHECK(model.Undo());
+        MN_CHECK_EQ(model.LastRestoredSelections(), (std::vector<UndoSelection>{{2, 2}}));
+        MN_CHECK(model.Redo());
+        MN_CHECK_EQ(model.LastRestoredSelections(), (std::vector<UndoSelection>{{1, 1}}));
+        MN_CHECK(model.Undo());
+        // New editing branch invalidates redo without leaking the old cursor.
+        model.ApplyOffsetEdits({OffsetEdit{0, 0, u"!"}});
+        MN_CHECK(!model.CanRedo());
+        MN_CHECK(model.LastRestoredSelections().empty());
+    }
+
+    void UndoRedoTransactionAndMultipleCarets()
+    {
+        TextModel model(u"abcdefgh");
+        model.BeginUndoTransaction();
+        model.ApplyOffsetEdits({OffsetEdit{6, 6, u"Z"}});
+        MN_CHECK(model.SetLatestUndoSelections({{2, 2}, {6, 6}}, {{2, 2}, {7, 7}}));
+        model.ApplyOffsetEdits({OffsetEdit{2, 2, u"Y"}});
+        // Preserve the FIRST pre-transaction snapshot, even though later
+        // reverse-order edits come from a different document revision.
+        MN_CHECK(model.SetLatestUndoSelections({{99, 99}}, {{3, 3}}));
+        model.EndUndoTransaction();
+        MN_CHECK(model.SetLatestUndoAfterSelections({{3, 3}, {8, 8}}));
+        MN_CHECK_EQ(model.GetValue(), std::u16string(u"abYcdefZgh"));
+
+        MN_CHECK(model.Undo());
+        MN_CHECK_EQ(model.GetValue(), std::u16string(u"abcdefgh"));
+        MN_CHECK_EQ(model.LastRestoredSelections(), (std::vector<UndoSelection>{{2, 2}, {6, 6}}));
+        MN_CHECK(model.Redo());
+        MN_CHECK_EQ(model.GetValue(), std::u16string(u"abYcdefZgh"));
+        MN_CHECK_EQ(model.LastRestoredSelections(), (std::vector<UndoSelection>{{3, 3}, {8, 8}}));
+    }
+
+    void UndoCursorFallbackAndHistoryReset()
+    {
+        TextModel model(u"abc");
+        // A headless client with no view still gets deterministic cursor offsets.
+        model.ApplyOffsetEdits({OffsetEdit{3, 3, u"😀"}});
+        MN_CHECK(model.Undo());
+        MN_CHECK_EQ(model.LastRestoredSelections(), (std::vector<UndoSelection>{{3, 3}}));
+        MN_CHECK(model.Redo());
+        MN_CHECK_EQ(model.LastRestoredSelections(), (std::vector<UndoSelection>{{5, 5}}));
+        model.SetValue(u"new");
+        MN_CHECK(model.LastRestoredSelections().empty());
+        MN_CHECK(!model.CanUndo());
+        MN_CHECK(!model.SetLatestUndoSelections({{1, 1}}, {{2, 2}}));
+    }
 }
 
 int main()
@@ -163,5 +251,9 @@ int main()
     suite.Run("EOL and indentation", EolAndIndentation);
     suite.Run("search and replace all", SearchAndReplaceAll);
     suite.Run("brackets and snapshots", BracketsAndSnapshots);
+    suite.Run("undo/redo restores each caret position", UndoRedoRestoresCaretAtEachEdit);
+    suite.Run("undo/redo selection direction and deletion", UndoRedoSelectionDirectionAndDelete);
+    suite.Run("undo/redo transaction and multi-caret", UndoRedoTransactionAndMultipleCarets);
+    suite.Run("undo cursor fallback and history reset", UndoCursorFallbackAndHistoryReset);
     return suite.Finish();
 }

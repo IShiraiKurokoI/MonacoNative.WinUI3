@@ -10,6 +10,8 @@ public enum MonacoEndOfLine
 
 public readonly record struct MonacoPosition(int LineNumber, int Column);
 public readonly record struct MonacoRange(int StartLineNumber, int StartColumn, int EndLineNumber, int EndColumn);
+/// <summary>UTF-16 offsets for the anchor and active end of an undoable selection.</summary>
+public readonly record struct MonacoUndoSelection(nuint Anchor, nuint Active);
 public readonly record struct MonacoBracketMatch(MonacoPosition Bracket, MonacoPosition Match);
 
 public sealed class MonacoModelChangedEventArgs : EventArgs
@@ -61,6 +63,11 @@ public sealed class MonacoModelChangedEventArgs : EventArgs
 public sealed class MonacoTextModel : IDisposable
 {
     private nint _handle;
+    private bool _pendingUndoSelectionAfter;
+
+    // A view supplies its selections just before a model edit changes offsets.
+    // Model-only callers keep the core's edit-derived fallback instead.
+    public Func<IReadOnlyList<MonacoUndoSelection>>? UndoSelectionProvider { get; set; }
 
     public event EventHandler<MonacoModelChangedEventArgs>? Changed;
 
@@ -86,6 +93,7 @@ public sealed class MonacoTextModel : IDisposable
             var oldLength = Length;
             if (NativeMethods.mn_model_set_text(Handle, value ?? string.Empty) == 0)
                 throw new InvalidOperationException("Native SetText failed.");
+            _pendingUndoSelectionAfter = false;
             RaiseChanged(0, oldLength, Length, 1, isFullInvalidation: true);
         }
     }
@@ -110,9 +118,13 @@ public sealed class MonacoTextModel : IDisposable
         }
         set
         {
+            var before = CaptureUndoSelections();
+            var oldVersion = VersionId;
             var oldLength = Length;
             if (NativeMethods.mn_model_set_eol(Handle, (int)value) == 0)
                 throw new InvalidOperationException("Native SetEOL failed.");
+            if (VersionId != oldVersion)
+                RecordUndoSelections(before, before);
             RaiseChanged(0, oldLength, Length, 1, isFullInvalidation: true);
         }
     }
@@ -199,6 +211,7 @@ public sealed class MonacoTextModel : IDisposable
 
     public void Replace(nuint start, nuint end, string text)
     {
+        var before = CaptureUndoSelections();
         var startPosition = GetPositionAt(start);
         var oldEndPosition = GetPositionAt(end);
         var replacement = text ?? string.Empty;
@@ -206,6 +219,7 @@ public sealed class MonacoTextModel : IDisposable
         if (NativeMethods.mn_model_replace(Handle, start, end, replacement) == 0)
             throw new ArgumentOutOfRangeException(nameof(start), "Native Replace failed.");
         var newEndOffset = start + insertedLength;
+        RecordUndoSelections(before, new[] { new MonacoUndoSelection(newEndOffset, newEndOffset) });
         var newEndPosition = GetPositionAt(newEndOffset);
         RaiseChanged(
             start, end, newEndOffset,
@@ -244,10 +258,20 @@ public sealed class MonacoTextModel : IDisposable
     {
         if (string.IsNullOrEmpty(query) || limit == 0)
             return 0;
+        var before = CaptureUndoSelections();
         var oldLength = Length;
         var count = NativeMethods.mn_model_replace_all(Handle, query, replacement ?? string.Empty, matchCase ? 1 : 0, wholeWord ? 1 : 0, limit);
         if (count > 0)
+        {
+            // An editor will replace this provisional post-edit state when it
+            // has positioned the caret. Model-only users use native defaults.
+            var after = before.Length == 0 ? before : before.Select(selection =>
+                new MonacoUndoSelection(
+                    selection.Anchor <= Length ? selection.Anchor : Length,
+                    selection.Active <= Length ? selection.Active : Length)).ToArray();
+            RecordUndoSelections(before, after);
             RaiseChanged(0, oldLength, Length, 1, isFullInvalidation: true);
+        }
         return count;
     }
 
@@ -270,6 +294,7 @@ public sealed class MonacoTextModel : IDisposable
         var oldLength = Length;
         if (NativeMethods.mn_model_undo(Handle) == 0)
             return false;
+        _pendingUndoSelectionAfter = false;
         RaiseChanged(0, oldLength, Length, 1, isFullInvalidation: true);
         return true;
     }
@@ -279,8 +304,79 @@ public sealed class MonacoTextModel : IDisposable
         var oldLength = Length;
         if (NativeMethods.mn_model_redo(Handle) == 0)
             return false;
+        _pendingUndoSelectionAfter = false;
         RaiseChanged(0, oldLength, Length, 1, isFullInvalidation: true);
         return true;
+    }
+
+    /// <summary>Selections restored by the most recently successful undo/redo.</summary>
+    public unsafe IReadOnlyList<MonacoUndoSelection> RestoredUndoSelections
+    {
+        get
+        {
+            var count = NativeMethods.mn_model_copy_restored_selections(Handle, null, 0);
+            if (count == 0)
+                return Array.Empty<MonacoUndoSelection>();
+            if (count > 1024)
+                throw new InvalidOperationException("Invalid restored selection count.");
+            var buffer = new NativeMethods.NativeUndoSelection[checked((int)count)];
+            fixed (NativeMethods.NativeUndoSelection* pointer = buffer)
+            {
+                if (NativeMethods.mn_model_copy_restored_selections(Handle, pointer, count) != count)
+                    throw new InvalidOperationException("Failed to restore undo selections.");
+            }
+            var result = new MonacoUndoSelection[buffer.Length];
+            for (var i = 0; i < result.Length; ++i)
+                result[i] = new MonacoUndoSelection(buffer[i].Anchor, buffer[i].Active);
+            return result;
+        }
+    }
+
+    private MonacoUndoSelection[] CaptureUndoSelections()
+    {
+        var captured = UndoSelectionProvider?.Invoke();
+        return captured is { Count: > 0 } ? captured.ToArray() : Array.Empty<MonacoUndoSelection>();
+    }
+
+    private static NativeMethods.NativeUndoSelection[] ToNativeSelections(IReadOnlyList<MonacoUndoSelection> selections)
+    {
+        var result = new NativeMethods.NativeUndoSelection[selections.Count];
+        for (var i = 0; i < result.Length; ++i)
+            result[i] = new NativeMethods.NativeUndoSelection { Anchor = selections[i].Anchor, Active = selections[i].Active };
+        return result;
+    }
+
+    private unsafe void RecordUndoSelections(
+        IReadOnlyList<MonacoUndoSelection> before, IReadOnlyList<MonacoUndoSelection> after)
+    {
+        if (before.Count == 0 || after.Count == 0)
+            return;
+        var nativeBefore = ToNativeSelections(before);
+        var nativeAfter = ToNativeSelections(after);
+        fixed (NativeMethods.NativeUndoSelection* first = nativeBefore, last = nativeAfter)
+        {
+            if (NativeMethods.mn_model_set_undo_selections(Handle,
+                first, (nuint)nativeBefore.Length, last, (nuint)nativeAfter.Length) == 0)
+                throw new InvalidOperationException("Failed to record undo selections.");
+        }
+        _pendingUndoSelectionAfter = true;
+    }
+
+    /// <summary>Call once the view has moved the caret after its text edit.</summary>
+    public unsafe void CommitUndoSelectionsAfterEdit()
+    {
+        if (!_pendingUndoSelectionAfter || InUndoTransaction)
+            return;
+        _pendingUndoSelectionAfter = false;
+        var after = CaptureUndoSelections();
+        if (after.Length == 0)
+            return;
+        var nativeAfter = ToNativeSelections(after);
+        fixed (NativeMethods.NativeUndoSelection* pointer = nativeAfter)
+        {
+            if (NativeMethods.mn_model_set_undo_after_selections(Handle, pointer, (nuint)nativeAfter.Length) == 0)
+                throw new InvalidOperationException("Failed to commit undo selections.");
+        }
     }
 
     public MonacoUndoTransaction BeginUndoTransaction()
@@ -300,6 +396,9 @@ public sealed class MonacoTextModel : IDisposable
     {
         if (NativeMethods.mn_model_end_undo_transaction(Handle) == 0)
             throw new InvalidOperationException("Failed to complete undo transaction.");
+        // Keep the post-edit snapshot pending: the editor may reposition its
+        // caret *after* completing a grouped edit. AfterProjectionChanged
+        // commits that final view state rather than this intermediate one.
     }
 
     internal bool RollbackUndoTransaction()
@@ -307,6 +406,7 @@ public sealed class MonacoTextModel : IDisposable
         var oldLength = Length;
         if (NativeMethods.mn_model_rollback_undo_transaction(Handle) == 0)
             return false;
+        _pendingUndoSelectionAfter = false;
         RaiseChanged(0, oldLength, Length, 1, isFullInvalidation: true);
         return true;
     }

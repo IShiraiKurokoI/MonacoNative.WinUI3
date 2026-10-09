@@ -3,7 +3,7 @@
 #include <stdint.h>
 
 #define MN_ABI_VERSION_MAJOR 1u
-#define MN_ABI_VERSION_MINOR 2u
+#define MN_ABI_VERSION_MINOR 3u
 #define MN_ABI_VERSION_PATCH 0u
 #define MN_ABI_VERSION_PACKED ((MN_ABI_VERSION_MAJOR << 16) | (MN_ABI_VERSION_MINOR << 8) | MN_ABI_VERSION_PATCH)
 
@@ -138,6 +138,14 @@ struct mn_abi_info
     uint32_t diff_move_size;
 };
 
+// UTF-16 offsets in the respective pre-edit/post-edit document revisions.
+// The first element is the primary selection; further entries are secondary.
+struct mn_undo_selection
+{
+    size_t anchor;
+    size_t active;
+};
+
 // Keybinding resolution snapshot. String pointers are owned by the
 // keybinding handle and remain valid until the next operation on that handle that resolves
 // or resets chord state. Callers must copy them if they need a longer lifetime.
@@ -164,6 +172,17 @@ MN_API int MN_CALL mn_model_can_undo(mn_model_handle handle);
 MN_API int MN_CALL mn_model_can_redo(mn_model_handle handle);
 MN_API int MN_CALL mn_model_undo(mn_model_handle handle);
 MN_API int MN_CALL mn_model_redo(mn_model_handle handle);
+// Annotate the most recent undo element (or the current undo transaction).
+// On subsequent edits inside the same transaction only "after" is replaced.
+MN_API int MN_CALL mn_model_set_undo_selections(mn_model_handle handle,
+    const mn_undo_selection* before, size_t before_count,
+    const mn_undo_selection* after, size_t after_count);
+MN_API int MN_CALL mn_model_set_undo_after_selections(mn_model_handle handle,
+    const mn_undo_selection* after, size_t after_count);
+// 0 if no undo/redo was applied, otherwise number of restored selections.
+// A NULL/undersized output returns the required count without copying.
+MN_API size_t MN_CALL mn_model_copy_restored_selections(mn_model_handle handle,
+    mn_undo_selection* selections, size_t capacity);
 MN_API int MN_CALL mn_model_begin_undo_transaction(mn_model_handle handle);
 MN_API int MN_CALL mn_model_end_undo_transaction(mn_model_handle handle);
 MN_API int MN_CALL mn_model_rollback_undo_transaction(mn_model_handle handle);

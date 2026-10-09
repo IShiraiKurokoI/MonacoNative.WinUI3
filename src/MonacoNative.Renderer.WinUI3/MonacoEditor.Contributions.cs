@@ -1003,6 +1003,16 @@ public sealed partial class MonacoEditor
         }
     }
 
+    private void ReplaceTextBox_KeyDown(object sender, KeyRoutedEventArgs e)
+    {
+        if (e.Key == VirtualKey.Escape)
+        {
+            HideFind();
+            Focus(FocusState.Programmatic);
+            e.Handled = true;
+        }
+    }
+
     private string ReplacementForMatch(int index, string replacement)
     {
         var range = _findMatches[index];

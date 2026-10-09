@@ -107,6 +107,10 @@ namespace
         MN_CHECK(model->CanUndo());
         MN_CHECK(model->Undo());
         MN_CHECK_EQ(model->GetValue(), std::u16string(u"abcdef"));
+        MN_CHECK_EQ(model->LastRestoredSelections(), (std::vector<MonacoNative::Core::UndoSelection>{{2, 5}}));
+        MN_CHECK(model->Redo());
+        MN_CHECK_EQ(model->LastRestoredSelections(), (std::vector<MonacoNative::Core::UndoSelection>{{6, 6}}));
+        MN_CHECK_EQ(model->GetValue(), std::u16string(u"abXYZWf"));
 
         model->OnDidChangeContent().Remove(token);
     }
@@ -139,6 +143,10 @@ namespace
         MN_CHECK_EQ(model->GetValue(), std::u16string(u"A\U0001F600ZC"));
         MN_CHECK_EQ(change.start, 3);
         MN_CHECK_EQ(change.newEnd, 4);
+        MN_CHECK(model->Undo());
+        MN_CHECK_EQ(model->LastRestoredSelections(), (std::vector<MonacoNative::Core::UndoSelection>{{3, 4}}));
+        MN_CHECK(model->Redo());
+        MN_CHECK_EQ(model->LastRestoredSelections(), (std::vector<MonacoNative::Core::UndoSelection>{{4, 4}}));
     }
     void TextModelBackendReportsOnlyExternalChanges()
     {

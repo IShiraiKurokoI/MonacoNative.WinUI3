@@ -34,6 +34,13 @@ internal static class NativeMethods
     }
 
     [StructLayout(LayoutKind.Sequential)]
+    internal struct NativeUndoSelection
+    {
+        internal nuint Anchor;
+        internal nuint Active;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
     internal struct NativeBracketMatch
     {
         internal int BracketLine;
@@ -136,6 +143,19 @@ internal static class NativeMethods
 
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern int mn_model_redo(nint handle);
+
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern unsafe int mn_model_set_undo_selections(nint handle,
+        NativeUndoSelection* before, nuint before_count,
+        NativeUndoSelection* after, nuint after_count);
+
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern unsafe int mn_model_set_undo_after_selections(nint handle,
+        NativeUndoSelection* after, nuint after_count);
+
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern unsafe nuint mn_model_copy_restored_selections(nint handle,
+        NativeUndoSelection* selections, nuint capacity);
 
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern int mn_model_begin_undo_transaction(nint handle);

@@ -83,7 +83,7 @@ The release package is `MonacoNative.WinUI3`. It carries both x64 and ARM64 nati
 </ItemGroup>
 ```
 
-The package keeps Windows App SDK pinned to `2.4.0`. The sole supported native ABI is **1.2.0**, recorded in `reference/native-abi.json`. `MonacoNativeAbi.EnsureCompatible()` requires an exact managed/native ABI match at startup; ship both binaries from the same build or NuGet package rather than mixing versions. See `docs/BUILDING.md` and [`docs/NATIVE_ABI.md`](docs/NATIVE_ABI.md) for the current interface contract and update policy.
+The package keeps Windows App SDK pinned to `2.4.0`. The sole supported native ABI is **1.3.0**, recorded in `reference/native-abi.json`. `MonacoNativeAbi.EnsureCompatible()` requires an exact managed/native ABI match at startup; ship both binaries from the same build or NuGet package rather than mixing versions. See `docs/BUILDING.md` and [`docs/NATIVE_ABI.md`](docs/NATIVE_ABI.md) for the current interface contract and update policy.
 
 ## Native Input 5 TSF-only status
 

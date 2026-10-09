@@ -140,6 +140,11 @@ public sealed class MonacoViewModel : IDisposable
 
     public int GetViewLineAtVerticalOffset(double offset) => NativeMethods.mn_view_line_at_vertical_offset(Handle, offset);
 
+    // Unlike GetViewLine, geometry queries do not allocate/marshal the entire
+    // (possibly very long) visible string. Used on every drag selection frame.
+    public double GetViewLineVerticalOffset(int viewLineNumber) =>
+        NativeMethods.mn_view_get_vertical_offset(Handle, viewLineNumber);
+
     public MonacoViewPosition ModelToView(MonacoPosition position)
     {
         if (NativeMethods.mn_view_model_to_view(Handle, position.LineNumber, position.Column, out var line, out var column) == 0)

@@ -503,6 +503,7 @@ namespace MonacoNative::Core
         const auto replacement = text;
         buffer_.SetText(std::move(text));
         undoRedo_.Clear();
+        lastRestoredSelections_.clear();
         ++versionId_;
         TransformDecorations({OffsetEdit{0, oldLength, replacement}}, oldDecorationOffsets);
 
@@ -556,6 +557,7 @@ namespace MonacoNative::Core
         {
             ApplyOffsetEditsInternal(iterator->inverse, false, true, false);
         }
+        lastRestoredSelections_ = element.beforeSelections;
         undoRedo_.PushRedo(std::move(element));
         return true;
     }
@@ -571,8 +573,24 @@ namespace MonacoNative::Core
         {
             ApplyOffsetEditsInternal(step.forward, false, false, true);
         }
+        lastRestoredSelections_ = element.afterSelections;
         undoRedo_.PushUndoFromRedo(std::move(element));
         return true;
+    }
+
+    bool TextModel::SetLatestUndoSelections(std::vector<UndoSelection> before, std::vector<UndoSelection> after)
+    {
+        return undoRedo_.SetLatestSelections(std::move(before), std::move(after));
+    }
+
+    bool TextModel::SetLatestUndoAfterSelections(std::vector<UndoSelection> after)
+    {
+        return undoRedo_.SetLatestAfterSelections(std::move(after));
+    }
+
+    const std::vector<UndoSelection>& TextModel::LastRestoredSelections() const noexcept
+    {
+        return lastRestoredSelections_;
     }
 
     void TextModel::BeginUndoTransaction()
@@ -619,6 +637,10 @@ namespace MonacoNative::Core
         if (edits.empty())
         {
             return;
+        }
+        if (!isUndoing && !isRedoing)
+        {
+            lastRestoredSelections_.clear();
         }
 
         std::sort(edits.begin(), edits.end(), [](const OffsetEdit& a, const OffsetEdit& b)

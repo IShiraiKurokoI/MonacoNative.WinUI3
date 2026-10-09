@@ -80,6 +80,9 @@ namespace MonacoNative::Core
         [[nodiscard]] bool CanRedo() const noexcept;
         bool Undo();
         bool Redo();
+        bool SetLatestUndoSelections(std::vector<UndoSelection> before, std::vector<UndoSelection> after);
+        bool SetLatestUndoAfterSelections(std::vector<UndoSelection> after);
+        [[nodiscard]] const std::vector<UndoSelection>& LastRestoredSelections() const noexcept;
 
         void BeginUndoTransaction();
         void EndUndoTransaction();
@@ -95,6 +98,7 @@ namespace MonacoNative::Core
 
         PieceTreeTextBuffer buffer_{};
         UndoRedoService undoRedo_{};
+        std::vector<UndoSelection> lastRestoredSelections_{};
         DecorationCollection decorations_{};
         std::uint64_t versionId_{1};
         std::string languageId_{"plaintext"};

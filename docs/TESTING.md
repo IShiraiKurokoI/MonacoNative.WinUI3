@@ -16,6 +16,8 @@ Run in **Windows PowerShell 5.1** inside an **unlocked desktop session** (not Wi
 
 The test launches the real `MonacoNative.SampleApp.exe` and drives it with Microsoft UI Automation (`UIAutomationClient`) and OS mouse/keyboard events. Assertions include the UIA Document peer, sample button and text, hover I-beam/arrow/minimap states, direct typing, undo/redo, pointer-drag selection, profiler activation, JSON/CSV export and report contents. A failing assertion returns nonzero and writes the failure message. For cursor fidelity, verify native visible cursor glyph manually on your device as part of release validation; the automated test checks the editor's cursor state and OS input pathway, but not an image-diff of the displayed hardware pointer.
 
+Undo/redo regression assertions compare the **actual UIA TextPattern caret line and column** after typing, Ctrl+Z and Ctrl+Y, rather than checking only the document text. `TextModelTests`, `NativeAbiTests`, `NativeInputBackendTests`, and the Windows `ManagedTests` additionally validate before/after caret snapshots for consecutive edits, reversed selections, multiple carets, grouped transactions and TSF replacement input.
+
 Artifacts:
 - `artifacts/ui-tests/ui-test-report.json`: pass/fail, completed checks, process CPU time and peak working set.
 - `artifacts/ui-tests/method-profiles/method-profile-*.json` and `.csv`: live method measurements.
@@ -54,7 +56,7 @@ identify:
 | Group | CTest command | Scope |
 | --- | --- | --- |
 | Core | `ctest --test-dir build -L '^core$' --output-on-failure` | Text model, cursor, folding, Unicode, commands, parity fixtures |
-| ABI | `ctest --test-dir build -L '^abi$' --output-on-failure` | Current native ABI 1.2.0, exported functions, lifetime and conversion contracts |
+| ABI | `ctest --test-dir build -L '^abi$' --output-on-failure` | Current native ABI 1.3.0, exported functions, lifetime and conversion contracts |
 | Input | `ctest --test-dir build -L '^input$' --output-on-failure` | Text-store backend and Windows TSF |
 
 Windows builds the native test binaries once and runs these groups in separate

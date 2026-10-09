@@ -5,11 +5,35 @@
 
 namespace MonacoNative::Core
 {
+    namespace
+    {
+        // Useful for headless/model clients that never provide editor cursor
+        // metadata. Interactive editor operations overwrite these defaults.
+        std::vector<UndoSelection> DefaultBeforeSelections(const EditBatch& batch)
+        {
+            if (batch.forward.empty()) return {};
+            const auto& first = batch.forward.front();
+            if (first.start != first.end && !first.text.empty())
+            {
+                return {{first.start, first.end}};
+            }
+            const auto offset = first.text.empty() ? first.end : first.start;
+            return {{offset, offset}};
+        }
+
+        std::vector<UndoSelection> DefaultAfterSelections(const EditBatch& batch)
+        {
+            if (batch.inverse.empty()) return {};
+            const auto offset = batch.inverse.front().end;
+            return {{offset, offset}};
+        }
+    }
+
     void UndoRedoService::Clear()
     {
         undoStack_.clear();
         redoStack_.clear();
-        pending_.steps.clear();
+        pending_ = {};
         transactionDepth_ = 0;
         transactionStartUndoSize_ = 0;
         transactionRedoBackup_.clear();
@@ -30,11 +54,21 @@ namespace MonacoNative::Core
                 redoStack_.clear();
                 redoClearedForPending_ = true;
             }
+            if (pending_.steps.empty())
+            {
+                pending_.beforeSelections = DefaultBeforeSelections(batch);
+                pending_.hasExplicitBeforeSelections = false;
+            }
+            pending_.afterSelections = DefaultAfterSelections(batch);
             pending_.steps.push_back(std::move(batch));
             return;
         }
 
-        undoStack_.push_back(UndoRedoElement{{std::move(batch)}});
+        UndoRedoElement element{};
+        element.beforeSelections = DefaultBeforeSelections(batch);
+        element.afterSelections = DefaultAfterSelections(batch);
+        element.steps.push_back(std::move(batch));
+        undoStack_.push_back(std::move(element));
         redoStack_.clear();
     }
 
@@ -88,13 +122,51 @@ namespace MonacoNative::Core
         undoStack_.push_back(std::move(element));
     }
 
+    bool UndoRedoService::SetLatestSelections(
+        std::vector<UndoSelection> before, std::vector<UndoSelection> after)
+    {
+        UndoRedoElement* element = nullptr;
+        if (transactionDepth_ != 0)
+        {
+            if (!pending_.steps.empty()) element = &pending_;
+        }
+        else if (!undoStack_.empty())
+        {
+            element = &undoStack_.back();
+        }
+        if (!element || before.empty() || after.empty()) return false;
+        if (!element->hasExplicitBeforeSelections)
+        {
+            element->beforeSelections = std::move(before);
+            element->hasExplicitBeforeSelections = true;
+        }
+        element->afterSelections = std::move(after);
+        return true;
+    }
+
+    bool UndoRedoService::SetLatestAfterSelections(std::vector<UndoSelection> after)
+    {
+        UndoRedoElement* element = nullptr;
+        if (transactionDepth_ != 0)
+        {
+            if (!pending_.steps.empty()) element = &pending_;
+        }
+        else if (!undoStack_.empty())
+        {
+            element = &undoStack_.back();
+        }
+        if (!element || after.empty()) return false;
+        element->afterSelections = std::move(after);
+        return true;
+    }
+
     void UndoRedoService::BeginTransaction()
     {
         if (transactionDepth_ == 0)
         {
             transactionStartUndoSize_ = undoStack_.size();
             transactionRedoBackup_ = redoStack_;
-            pending_.steps.clear();
+            pending_ = {};
             redoClearedForPending_ = false;
         }
         ++transactionDepth_;

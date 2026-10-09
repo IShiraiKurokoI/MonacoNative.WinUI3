@@ -80,6 +80,78 @@ internal static class Program
             Equal("X X alphabet ALPHA", model.Text);
         });
 
+        Run("undo/redo restores exact caret positions across multiple lines", () =>
+        {
+            using var model = new MonacoTextModel("ab\ncd");
+            IReadOnlyList<MonacoUndoSelection> carets = new[] { new MonacoUndoSelection(5, 5) };
+            model.UndoSelectionProvider = () => carets;
+            model.Replace(5, 5, "X");
+            carets = new[] { new MonacoUndoSelection(6, 6) };
+            model.CommitUndoSelectionsAfterEdit();
+            model.Replace(6, 6, "\nq");
+            carets = new[] { new MonacoUndoSelection(8, 8) };
+            model.CommitUndoSelectionsAfterEdit();
+
+            True(model.Undo(), "Undo newline failed.");
+            Equal(new MonacoUndoSelection(6, 6), model.RestoredUndoSelections[0]);
+            Equal(new MonacoPosition(2, 4), model.GetPositionAt(model.RestoredUndoSelections[0].Active));
+            True(model.Undo(), "Undo inserted character failed.");
+            Equal(new MonacoUndoSelection(5, 5), model.RestoredUndoSelections[0]);
+            True(model.Redo(), "Redo inserted character failed.");
+            Equal(new MonacoUndoSelection(6, 6), model.RestoredUndoSelections[0]);
+            True(model.Redo(), "Redo newline failed.");
+            Equal(new MonacoUndoSelection(8, 8), model.RestoredUndoSelections[0]);
+            Equal(new MonacoPosition(3, 2), model.GetPositionAt(model.RestoredUndoSelections[0].Active));
+        });
+
+        Run("undo/redo restores reversed selections and backspace caret", () =>
+        {
+            using var model = new MonacoTextModel("abcdef");
+            IReadOnlyList<MonacoUndoSelection> carets = new[] { new MonacoUndoSelection(5, 2) };
+            model.UndoSelectionProvider = () => carets;
+            model.Replace(2, 5, "Z");
+            carets = new[] { new MonacoUndoSelection(3, 3) };
+            model.CommitUndoSelectionsAfterEdit();
+            True(model.Undo(), "Undo replacement failed.");
+            Equal(new MonacoUndoSelection(5, 2), model.RestoredUndoSelections[0]);
+            True(model.Redo(), "Redo replacement failed.");
+            Equal(new MonacoUndoSelection(3, 3), model.RestoredUndoSelections[0]);
+
+            model.Text = "ab";
+            carets = new[] { new MonacoUndoSelection(2, 2) };
+            model.Replace(1, 2, "");
+            carets = new[] { new MonacoUndoSelection(1, 1) };
+            model.CommitUndoSelectionsAfterEdit();
+            True(model.Undo(), "Undo backspace failed.");
+            Equal(new MonacoUndoSelection(2, 2), model.RestoredUndoSelections[0]);
+            True(model.Redo(), "Redo backspace failed.");
+            Equal(new MonacoUndoSelection(1, 1), model.RestoredUndoSelections[0]);
+        });
+
+        Run("undo/redo restores multiple carets after a grouped edit", () =>
+        {
+            using var model = new MonacoTextModel("abcdefgh");
+            IReadOnlyList<MonacoUndoSelection> carets = new[]
+            {
+                new MonacoUndoSelection(2, 2), new MonacoUndoSelection(6, 6)
+            };
+            model.UndoSelectionProvider = () => carets;
+            using (var transaction = model.BeginUndoTransaction())
+            {
+                model.Replace(6, 6, "Z");
+                model.Replace(2, 2, "Y");
+                transaction.Complete();
+            }
+            carets = new[] { new MonacoUndoSelection(3, 3), new MonacoUndoSelection(8, 8) };
+            model.CommitUndoSelectionsAfterEdit();
+            True(model.Undo(), "Undo multi-caret transaction failed.");
+            Equal(new MonacoUndoSelection(2, 2), model.RestoredUndoSelections[0]);
+            Equal(new MonacoUndoSelection(6, 6), model.RestoredUndoSelections[1]);
+            True(model.Redo(), "Redo multi-caret transaction failed.");
+            Equal(new MonacoUndoSelection(3, 3), model.RestoredUndoSelections[0]);
+            Equal(new MonacoUndoSelection(8, 8), model.RestoredUndoSelections[1]);
+        });
+
         Run("EOL conversion", () =>
         {
             using var model = new MonacoTextModel("a\r\nb\r\n");

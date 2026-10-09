@@ -24,6 +24,7 @@ namespace
 {
     using MonacoNative::Core::EndOfLineSequence;
     using MonacoNative::Core::OffsetEdit;
+    using MonacoNative::Core::UndoSelection;
     using MonacoNative::Core::Position;
     using MonacoNative::Core::TextModel;
     using MonacoNative::Core::ViewModel;
@@ -275,6 +276,7 @@ namespace
         {
             if (readOnly_ || start < 0 || end < start || static_cast<size_t>(end) > model_->Length())
                 return false;
+            const auto previous = GetSelection();
             ++tsfEditDepth_;
             try
             {
@@ -287,6 +289,14 @@ namespace
             }
             --tsfEditDepth_;
             const auto newEnd = start + static_cast<int32_t>(text.size());
+            // The WinUI TSF backend mutates the native model directly. Give
+            // those edits the same undo-caret history as managed keyboard edits.
+            const UndoSelection before{
+                static_cast<size_t>(previous.activeEndAtStart ? previous.end : previous.start),
+                static_cast<size_t>(previous.activeEndAtStart ? previous.start : previous.end),
+            };
+            const auto afterOffset = static_cast<size_t>(newEnd);
+            (void)model_->SetLatestUndoSelections({before}, {{afterOffset, afterOffset}});
             change = {start, end, newEnd};
             const AcpSelection collapsed{newEnd, newEnd, false, false};
             fallbackSelection_ = collapsed;
@@ -701,6 +711,56 @@ int MN_CALL mn_model_redo(mn_model_handle handle)
 {
     const auto h = AsHandle(handle);
     return h && h->model->Redo();
+}
+
+int MN_CALL mn_model_set_undo_selections(mn_model_handle handle,
+    const mn_undo_selection* before, size_t before_count,
+    const mn_undo_selection* after, size_t after_count)
+{
+    try
+    {
+        const auto h = AsHandle(handle);
+        if (!h || !before || !after || before_count == 0 || after_count == 0 ||
+            before_count > 1024 || after_count > 1024) return 0;
+        std::vector<UndoSelection> initial;
+        std::vector<UndoSelection> final;
+        initial.reserve(before_count);
+        final.reserve(after_count);
+        for (size_t i = 0; i < before_count; ++i)
+            initial.push_back({before[i].anchor, before[i].active});
+        for (size_t i = 0; i < after_count; ++i)
+            final.push_back({after[i].anchor, after[i].active});
+        return h->model->SetLatestUndoSelections(std::move(initial), std::move(final)) ? 1 : 0;
+    }
+    catch (...) { return 0; }
+}
+
+int MN_CALL mn_model_set_undo_after_selections(mn_model_handle handle,
+    const mn_undo_selection* after, size_t after_count)
+{
+    try
+    {
+        const auto h = AsHandle(handle);
+        if (!h || !after || after_count == 0 || after_count > 1024) return 0;
+        std::vector<UndoSelection> final;
+        final.reserve(after_count);
+        for (size_t i = 0; i < after_count; ++i)
+            final.push_back({after[i].anchor, after[i].active});
+        return h->model->SetLatestUndoAfterSelections(std::move(final)) ? 1 : 0;
+    }
+    catch (...) { return 0; }
+}
+
+size_t MN_CALL mn_model_copy_restored_selections(mn_model_handle handle,
+    mn_undo_selection* selections, size_t capacity)
+{
+    const auto h = AsHandle(handle);
+    if (!h) return 0;
+    const auto& restored = h->model->LastRestoredSelections();
+    if (!selections || capacity < restored.size()) return restored.size();
+    for (size_t i = 0; i < restored.size(); ++i)
+        selections[i] = {restored[i].anchor, restored[i].active};
+    return restored.size();
 }
 
 int MN_CALL mn_model_begin_undo_transaction(mn_model_handle handle)

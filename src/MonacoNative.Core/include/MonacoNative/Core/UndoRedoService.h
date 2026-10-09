@@ -13,9 +13,23 @@ namespace MonacoNative::Core
         std::vector<OffsetEdit> inverse{};
     };
 
+    // UTF-16 offsets, not Position values: each snapshot belongs to a different
+    // document revision. Anchor and active are kept separately for reversed
+    // selections, and there may be more than one caret.
+    struct UndoSelection final
+    {
+        std::size_t anchor{};
+        std::size_t active{};
+
+        friend bool operator==(const UndoSelection&, const UndoSelection&) = default;
+    };
+
     struct UndoRedoElement final
     {
         std::vector<EditBatch> steps{};
+        std::vector<UndoSelection> beforeSelections{};
+        std::vector<UndoSelection> afterSelections{};
+        bool hasExplicitBeforeSelections{};
     };
 
     class UndoRedoService final
@@ -29,6 +43,10 @@ namespace MonacoNative::Core
         [[nodiscard]] UndoRedoElement PopRedo();
         void PushRedo(UndoRedoElement element);
         void PushUndoFromRedo(UndoRedoElement element);
+        // The first edit of a transaction supplies "before"; the last edit
+        // (or the editor after it moves the caret) supplies "after".
+        bool SetLatestSelections(std::vector<UndoSelection> before, std::vector<UndoSelection> after);
+        bool SetLatestAfterSelections(std::vector<UndoSelection> after);
 
         void BeginTransaction();
         void EndTransaction();

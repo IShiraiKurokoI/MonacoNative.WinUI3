@@ -6,6 +6,7 @@ using Microsoft.UI.Input;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Media;
@@ -54,7 +55,8 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
     private Color _backgroundColor = Color.FromArgb(255, 30, 30, 30);
     private Color _foregroundColor = Color.FromArgb(255, 212, 212, 212);
     private Color _gutterColor = Color.FromArgb(255, 133, 133, 133);
-    private Color _selectionColor = Color.FromArgb(150, 38, 79, 120);
+    private Color _selectionColor = Color.FromArgb(255, 38, 79, 120);
+    private Color _findMatchColor = Color.FromArgb(205, 158, 106, 3);
     private Color _currentLineColor = Color.FromArgb(55, 255, 255, 255);
     private Color _caretColor = Color.FromArgb(255, 255, 255, 255);
     private Color _compositionColor = Color.FromArgb(255, 255, 255, 255);
@@ -62,7 +64,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
     private Color _whitespaceColor = Color.FromArgb(120, 150, 150, 150);
     private Color _indentGuideColor = Color.FromArgb(90, 120, 120, 120);
     private Color _overviewColor = Color.FromArgb(210, 0, 122, 204);
-    private Color _minimapBackgroundColor = Color.FromArgb(255, 25, 25, 25);
+    private Color _minimapBackgroundColor = Color.FromArgb(255, 31, 31, 31);
     private Color _minimapForegroundColor = Color.FromArgb(150, 135, 135, 135);
     // Monaco/VS Code exposes six bracket-pair highlight levels. The concrete colors are
     // renderer/theme details, but keeping six slots preserves the upstream nesting cycle.
@@ -143,12 +145,24 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
     private bool _bracketPairColorization = true;
     private double _lineHeight = DefaultLineHeight;
     private double _maxObservedLineWidth;
+    private double _lastProjectionWrapWidth = double.NaN;
+    private double _lastProjectionLineHeight = double.NaN;
     private ulong _lastRenderedVersion;
     private float? _preferredCaretX;
     private bool _disposed;
     private bool _modelRefreshQueued;
     private int _lastKnownViewLineCount;
     private bool _renderQueued;
+    private bool _presentingFrame;
+    // Coalesce live HWND resize notifications before touching the expensive native
+    // word-wrap projection. The previously presented swap chain stays attached.
+    private bool _viewportResizeQueued;
+    private bool _dragNotificationsQueued;
+    private int _dragHitViewLine;
+    private long _dragHitLayoutRevision;
+    private ulong _dragHitModelVersion;
+    private string? _dragHitText;
+    private CanvasTextLayout? _dragHitLayout;
     private RenderDirty _pendingRenderDirty = RenderDirty.All;
     private int _decorationDirtyFromLine = 1;
     private bool _isReadOnly;
@@ -201,6 +215,9 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
         _view = new MonacoViewModel(_model);
         _view.SetLineHeight(_lineHeight);
         _lastKnownViewLineCount = _view.ViewLineCount;
+        // Capture the selection in the OLD document before each model edit.
+        // The text model stores it alongside the corresponding undo element.
+        _model.UndoSelectionProvider = CaptureUndoSelections;
         _model.Changed += Model_Changed;
         _accessibilityTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
         _accessibilityTimer.Tick += AccessibilityTimer_Tick;
@@ -241,6 +258,20 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
             new PointerEventHandler(SurfaceRoot_PointerMoved), true);
         RegisterDefaultCommands();
         InitializeContributions();
+        // Contributions are created after the first palette pass; apply the
+        // active theme to their chrome even for standalone embedded editors.
+        ApplyFindWidgetPalette(_lastHighContrast == true, _lastTheme);
+        // The checked-state accent has to update on every toggle, not only on a
+        // theme switch. Keep the control palette native rather than hardcode it in XAML.
+        foreach (var toggle in new[]
+        {
+            FindReplaceExpander, FindMatchCase, FindWholeWord, FindRegex,
+            FindInSelection, ReplacePreserveCase,
+        })
+        {
+            toggle.Checked += FindToggleVisualStateChanged;
+            toggle.Unchecked += FindToggleVisualStateChanged;
+        }
         RegisterContributionCommands();
         _commands.IsCommandAllowed = id => GetCommandAvailability(id) != EditorCommandAvailability.Disabled;
         UpdateCommandContext();
@@ -468,22 +499,20 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
 
     public void Undo()
     {
-        var anchorOffset = _model.GetOffsetAt(_anchor);
-        var activeOffset = _model.GetOffsetAt(_active);
         if (!_model.Undo())
             return;
-        RestoreSelectionOffsets(anchorOffset, activeOffset);
+        RestoreHistorySelections(_model.RestoredUndoSelections);
         AfterProjectionChanged(true);
+        OnSelectionChanged();
     }
 
     public void Redo()
     {
-        var anchorOffset = _model.GetOffsetAt(_anchor);
-        var activeOffset = _model.GetOffsetAt(_active);
         if (!_model.Redo())
             return;
-        RestoreSelectionOffsets(anchorOffset, activeOffset);
+        RestoreHistorySelections(_model.RestoredUndoSelections);
         AfterProjectionChanged(true);
+        OnSelectionChanged();
     }
 
     public void RefreshProjection()
@@ -677,7 +706,8 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
             _backgroundColor = background;
             _foregroundColor = foreground;
             _gutterColor = foreground;
-            _selectionColor = Color.FromArgb(145, accent.R, accent.G, accent.B);
+            _selectionColor = Color.FromArgb(185, accent.R, accent.G, accent.B);
+            _findMatchColor = Color.FromArgb(200, accent.R, accent.G, accent.B);
             _currentLineColor = Color.FromArgb(40, foreground.R, foreground.G, foreground.B);
             _caretColor = foreground;
             _compositionColor = foreground;
@@ -702,17 +732,18 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
         else if (theme == ElementTheme.Light)
         {
             _backgroundColor = Color.FromArgb(255, 255, 255, 255);
-            _foregroundColor = Color.FromArgb(255, 36, 36, 36);
-            _gutterColor = Color.FromArgb(255, 110, 110, 110);
-            _selectionColor = Color.FromArgb(140, 173, 214, 255);
-            _currentLineColor = Color.FromArgb(36, 0, 0, 0);
+            _foregroundColor = Color.FromArgb(255, 59, 59, 59);    // Modern Light editor.foreground #3B3B3B
+            _gutterColor = Color.FromArgb(255, 110, 118, 129);
+            _selectionColor = Color.FromArgb(255, 173, 214, 255); // VS Code active selection #ADD6FF
+            _findMatchColor = Color.FromArgb(180, 168, 172, 148);
+            _currentLineColor = Color.FromArgb(255, 247, 247, 247);
             _caretColor = Color.FromArgb(255, 17, 17, 17);
             _compositionColor = Color.FromArgb(255, 36, 36, 36);
             _compositionTargetColor = Color.FromArgb(255, 0, 102, 204);
             _whitespaceColor = Color.FromArgb(110, 150, 150, 150);
             _indentGuideColor = Color.FromArgb(90, 185, 185, 185);
             _overviewColor = Color.FromArgb(210, 0, 102, 204);
-            _minimapBackgroundColor = Color.FromArgb(255, 248, 248, 248);
+            _minimapBackgroundColor = Color.FromArgb(255, 255, 255, 255);
             _minimapForegroundColor = Color.FromArgb(145, 120, 120, 120);
             _bracketColors[0] = Color.FromArgb(255, 4, 81, 165);
             _bracketColors[1] = Color.FromArgb(255, 121, 94, 38);
@@ -720,26 +751,27 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
             _bracketColors[3] = Color.FromArgb(255, 0, 122, 122);
             _bracketColors[4] = Color.FromArgb(255, 61, 111, 61);
             _bracketColors[5] = Color.FromArgb(255, 107, 61, 61);
-            chromeBorder = Color.FromArgb(255, 215, 215, 220);
-            stickyBackground = Color.FromArgb(242, 255, 255, 255);
-            widgetBackground = Color.FromArgb(246, 255, 255, 255);
-            widgetBorder = Color.FromArgb(255, 200, 200, 205);
+            chromeBorder = Color.FromArgb(255, 229, 229, 229);
+            stickyBackground = Color.FromArgb(248, 248, 248, 248);
+            widgetBackground = Color.FromArgb(255, 248, 248, 248);
+            widgetBorder = Color.FromArgb(255, 206, 206, 206);
             UpdateLanguagePalette(highContrast: false);
         }
         else
         {
-            _backgroundColor = Color.FromArgb(255, 30, 30, 30);
-            _foregroundColor = Color.FromArgb(255, 212, 212, 212);
-            _gutterColor = Color.FromArgb(255, 133, 133, 133);
-            _selectionColor = Color.FromArgb(150, 38, 79, 120);
-            _currentLineColor = Color.FromArgb(55, 255, 255, 255);
+            _backgroundColor = Color.FromArgb(255, 31, 31, 31); // Modern Dark editor.background #1F1F1F
+            _foregroundColor = Color.FromArgb(255, 204, 204, 204);
+            _gutterColor = Color.FromArgb(255, 110, 118, 129);
+            _selectionColor = Color.FromArgb(255, 38, 79, 120); // VS Code active selection #264F78
+            _findMatchColor = Color.FromArgb(205, 158, 106, 3); // Modern Dark editor.findMatchBackground #9E6A03
+            _currentLineColor = Color.FromArgb(255, 43, 43, 43);
             _caretColor = Color.FromArgb(255, 255, 255, 255);
             _compositionColor = Color.FromArgb(255, 212, 212, 212);
             _compositionTargetColor = Color.FromArgb(255, 86, 156, 214);
             _whitespaceColor = Color.FromArgb(120, 150, 150, 150);
             _indentGuideColor = Color.FromArgb(90, 120, 120, 120);
             _overviewColor = Color.FromArgb(210, 0, 122, 204);
-            _minimapBackgroundColor = Color.FromArgb(255, 25, 25, 25);
+            _minimapBackgroundColor = Color.FromArgb(255, 31, 31, 31);
             _minimapForegroundColor = Color.FromArgb(150, 135, 135, 135);
             _bracketColors[0] = Color.FromArgb(255, 255, 215, 0);
             _bracketColors[1] = Color.FromArgb(255, 218, 112, 214);
@@ -747,10 +779,10 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
             _bracketColors[3] = Color.FromArgb(255, 79, 177, 188);
             _bracketColors[4] = Color.FromArgb(255, 151, 194, 108);
             _bracketColors[5] = Color.FromArgb(255, 171, 178, 192);
-            chromeBorder = Color.FromArgb(255, 63, 63, 70);
-            stickyBackground = Color.FromArgb(242, 30, 30, 30);
-            widgetBackground = Color.FromArgb(246, 37, 37, 38);
-            widgetBorder = Color.FromArgb(255, 88, 88, 88);
+            chromeBorder = Color.FromArgb(255, 43, 43, 43);
+            stickyBackground = Color.FromArgb(250, 31, 31, 31);
+            widgetBackground = Color.FromArgb(255, 32, 32, 32);
+            widgetBorder = Color.FromArgb(255, 75, 75, 75);
             UpdateLanguagePalette(highContrast: false);
         }
 
@@ -758,8 +790,98 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
         EditorChrome.BorderBrush = new SolidColorBrush(chromeBorder);
         StickyScrollHost.Background = new SolidColorBrush(stickyBackground);
         StickyScrollHost.BorderBrush = new SolidColorBrush(chromeBorder);
-        FindWidget.Background = new SolidColorBrush(widgetBackground);
+        // The find / replace pane must be a fully opaque XAML overlay over Win2D.
+        // Do not inherit translucent system/acrylic brushes, including in HC themes.
+        FindWidget.Opacity = 1;
+        FindWidget.Background = new SolidColorBrush(Color.FromArgb(255,
+            widgetBackground.R, widgetBackground.G, widgetBackground.B));
         FindWidget.BorderBrush = new SolidColorBrush(widgetBorder);
+        ApplyFindWidgetPalette(highContrast, theme);
+    }
+
+    private void ApplyFindWidgetPalette(bool highContrast, ElementTheme theme)
+    {
+        // WinUI TextBox / Button defaults follow system accents, which can make the
+        // search surface too faint against a VS Code palette. Set all input and icon
+        // chrome from the same explicit palette (including accessibility mode).
+        Color foreground, inputBackground, controlBackground, inputBorder;
+        if (highContrast)
+        {
+            foreground = _uiSettings.GetColorValue(UIColorType.Foreground);
+            inputBackground = _uiSettings.GetColorValue(UIColorType.Background);
+            controlBackground = inputBackground;
+            inputBorder = foreground;
+        }
+        else if (theme == ElementTheme.Light)
+        {
+            foreground = Color.FromArgb(255, 59, 59, 59);
+            inputBackground = Color.FromArgb(255, 255, 255, 255);
+            controlBackground = Color.FromArgb(255, 229, 229, 229);
+            inputBorder = Color.FromArgb(255, 206, 206, 206);
+        }
+        else
+        {
+            foreground = Color.FromArgb(255, 204, 204, 204);
+            inputBackground = Color.FromArgb(255, 49, 49, 49);
+            controlBackground = Color.FromArgb(255, 49, 49, 49);
+            inputBorder = Color.FromArgb(255, 75, 75, 75);
+        }
+
+        var textBrush = new SolidColorBrush(foreground);
+        var inputBrush = new SolidColorBrush(inputBackground);
+        var buttonBrush = new SolidColorBrush(controlBackground);
+        var borderBrush = new SolidColorBrush(inputBorder);
+        foreach (var box in new[] { FindTextBox, ReplaceTextBox })
+        {
+            box.Background = inputBrush;
+            box.Foreground = textBrush;
+            box.BorderBrush = borderBrush;
+        }
+        foreach (ButtonBase button in new ButtonBase[]
+        {
+            FindReplaceExpander, FindMatchCase, FindWholeWord, FindRegex,
+            FindInSelection, FindPreviousButton, FindNextButton, FindCloseButton,
+            ReplacePreserveCase, ReplaceOneButton, ReplaceAllButton,
+        })
+        {
+            button.Foreground = textBrush;
+            button.Background = buttonBrush;
+            button.BorderBrush = borderBrush;
+            button.BorderThickness = new Thickness(1);
+        }
+        FindMatchCount.Foreground = textBrush;
+        FindStatusMessage.Foreground = new SolidColorBrush(highContrast ? foreground :
+            theme == ElementTheme.Light ? Color.FromArgb(255, 164, 46, 46) : Color.FromArgb(255, 244, 135, 135));
+        foreach (var toggle in new[]
+        {
+            FindReplaceExpander, FindMatchCase, FindWholeWord, FindRegex,
+            FindInSelection, ReplacePreserveCase,
+        })
+            SetFindTogglePalette(toggle, highContrast, theme);
+        if (_contributionPopup is not null)
+        {
+            _contributionPopup.Background = new SolidColorBrush(highContrast ? inputBackground :
+                theme == ElementTheme.Light ? Color.FromArgb(255, 248, 248, 248) : Color.FromArgb(255, 32, 32, 32));
+            _contributionPopup.BorderBrush = borderBrush;
+        }
+    }
+
+    private void FindToggleVisualStateChanged(object sender, RoutedEventArgs e)
+    {
+        if (sender is ToggleButton)
+            ApplyFindWidgetPalette(_lastHighContrast == true, _lastTheme);
+    }
+
+    private void SetFindTogglePalette(ToggleButton toggle, bool highContrast, ElementTheme theme)
+    {
+        if (toggle.IsChecked != true)
+            return; // The inactive palette is supplied by ApplyFindWidgetPalette.
+        var selectedFill = highContrast ? _uiSettings.GetColorValue(UIColorType.Background) :
+            theme == ElementTheme.Light ? Color.FromArgb(255, 190, 214, 237) : Color.FromArgb(255, 45, 88, 124);
+        var selectedBorder = highContrast ? _uiSettings.GetColorValue(UIColorType.Foreground) :
+            theme == ElementTheme.Light ? Color.FromArgb(255, 0, 95, 184) : Color.FromArgb(255, 36, 136, 219);
+        toggle.Background = new SolidColorBrush(selectedFill);
+        toggle.BorderBrush = new SolidColorBrush(selectedBorder);
     }
 
     private IEditorTextInputController CreateTextInputController()
@@ -866,14 +988,38 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
     private void Editor_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         UpdateFindWidgetPlacement();
-        if (!_loaded)
+        if (!_loaded || _viewportResizeQueued)
             return;
-        EnsureSwapChain();
+
+        // SizeChanged can fire once for every pixel of a window-edge drag. Doing a
+        // complete ViewModel::Rebuild plus swap-chain allocation synchronously in
+        // this handler starves WinUI's composition and pointer messages. VS Code
+        // similarly coalesces view-layout work into a coordinated render tick.
+        _viewportResizeQueued = true;
+        if (!DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.High, () =>
+        {
+            _viewportResizeQueued = false;
+            if (_disposed || !_loaded)
+                return;
+            ApplyViewportResize();
+        }))
+        {
+            _viewportResizeQueued = false;
+            ApplyViewportResize();
+        }
+    }
+
+    private void ApplyViewportResize()
+    {
+        // Keep the old *presented* swap chain on screen while these operations run.
+        // RenderFrame creates and paints a replacement before swapping the XAML
+        // composition surface; no attached buffer is ever resized/cleared here.
         UpdateProjectionMetrics();
         _textInput?.NotifyLayoutChanged();
         RaiseAccessibilityLayoutInvalidated();
         OnContributionsViewportChanged();
         Render();
+        FlushPendingRender();
     }
 
     private void EnsureGraphicsResources()
@@ -907,17 +1053,10 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
         var width = (float)Math.Max(1, ActualWidth);
         var height = (float)Math.Max(1, ActualHeight);
         var dpi = (float)(96.0 * (XamlRoot?.RasterizationScale ?? 1.0));
-        if (_swapChain is null)
-        {
-            _swapChain = new CanvasSwapChain(_device, width, height, dpi);
-            SwapChainPanel.SwapChain = _swapChain;
-        }
-        else
-        {
-            var size = _swapChain.Size;
-            if (Math.Abs(size.Width - width) > 0.5 || Math.Abs(size.Height - height) > 0.5 || Math.Abs(_swapChain.Dpi - dpi) > 0.5)
-                _swapChain.ResizeBuffers(width, height, dpi);
-        }
+        // Do not attach an unpainted swap chain, or call ResizeBuffers on the
+        // currently attached one: either action can expose an empty black frame.
+        // RenderFrame attaches the first surface only AFTER its first Present.
+        _swapChain ??= new CanvasSwapChain(_device, width, height, dpi);
     }
 
     private void Device_DeviceLost(CanvasDevice sender, object args)
@@ -959,6 +1098,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
         _renderLayerWidth = 0;
         _renderLayerHeight = 0;
         _renderLayerDpi = 0;
+        ClearDragHitTestCache();
         _pendingRenderDirty = RenderDirty.All;
         // GetSharedDevice returns a shared object; do not dispose it here.
         _device = null;
@@ -971,11 +1111,21 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
             return;
         var overlayWidth = (_showMinimap ? MinimapWidth : 0.0) + (_showOverviewRuler ? OverviewRulerWidth : 0.0);
         var textWidth = Math.Max(1.0, ActualWidth - overlayWidth - GutterWidth - LeftPadding - RightPadding);
-        _view.SetLineHeight(_lineHeight);
-        _view.SetWrapWidth(_wordWrap ? textWidth : 0.0);
-        _layoutCache?.Clear();
-        _measurer.Clear();
-        _maxObservedLineWidth = 0;
+        var wrapWidth = _wordWrap ? textWidth : 0.0;
+        // Vertical-only resizing does not invalidate text shaping or wrapping.
+        // Avoid discarding the DirectWrite layout cache on every resize tick.
+        if (double.IsNaN(_lastProjectionWrapWidth) ||
+            Math.Abs(_lastProjectionWrapWidth - wrapWidth) > 0.5 ||
+            _lastProjectionLineHeight != _lineHeight)
+        {
+            _lastProjectionWrapWidth = wrapWidth;
+            _lastProjectionLineHeight = _lineHeight;
+            _view.SetLineHeight(_lineHeight);
+            _view.SetWrapWidth(wrapWidth);
+            _layoutCache?.Clear();
+            _measurer.Clear();
+            _maxObservedLineWidth = 0;
+        }
         UpdateExtent();
         Render();
     }
@@ -1013,25 +1163,51 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
             return;
 
         _renderQueued = true;
-        if (!DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Normal, () =>
+        // Interactive drag paints stay coalesced at normal priority to avoid
+        // starving new pointer events. View options and theme paints get high
+        // priority, and the host can synchronously flush when closing a flyout.
+        var priority = _dragSelecting
+            ? Microsoft.UI.Dispatching.DispatcherQueuePriority.Normal
+            : Microsoft.UI.Dispatching.DispatcherQueuePriority.High;
+        if (!DispatcherQueue.TryEnqueue(priority, () =>
         {
             _renderQueued = false;
-            if (_disposed || !_loaded)
-                return;
-
-            var pending = _pendingRenderDirty;
-            _pendingRenderDirty = RenderDirty.None;
-            try
-            {
-                RenderFrame(pending);
-            }
-            catch (Exception ex) when (_device is not null && _device.IsDeviceLost(ex.HResult))
-            {
-                _device.RaiseDeviceLost();
-            }
+            FlushPendingRender();
         }))
-        {
             _renderQueued = false;
+    }
+
+    /// <summary>
+    /// Synchronously present queued view-option and resize changes on the UI thread.
+    /// A queued callback is harmless afterward because there is no dirty frame left.
+    /// </summary>
+    public void CommitViewOptions()
+    {
+        // Hosts may change one or more view options in a flyout Click handler.
+        // Invalidate all view parts (including XAML overlay-dependent parts)
+        // and synchronously submit the actual new frame before returning.
+        Render(RenderDirty.All);
+        FlushPendingRender();
+    }
+
+    public void FlushPendingRender()
+    {
+        if (_disposed || !_loaded || _presentingFrame || _pendingRenderDirty == RenderDirty.None)
+            return;
+        var pending = _pendingRenderDirty;
+        _pendingRenderDirty = RenderDirty.None;
+        _presentingFrame = true;
+        try
+        {
+            RenderFrame(pending);
+        }
+        catch (Exception ex) when (_device is not null && _device.IsDeviceLost(ex.HResult))
+        {
+            _device.RaiseDeviceLost();
+        }
+        finally
+        {
+            _presentingFrame = false;
         }
     }
 
@@ -1042,68 +1218,102 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
             return;
 
         var frameStart = Stopwatch.GetTimestamp();
-
-        if (EnsureRenderLayers())
-            dirty |= RenderDirty.All;
-
-        if (_textLayer is null)
-            return;
-
-        if (_lastRenderedVersion != _model.VersionId)
-            _lastRenderedVersion = _model.VersionId;
-
-        var scrollTop = ScrollHost.VerticalOffset;
-        var scrollLeft = ScrollHost.HorizontalOffset;
-        var first = Math.Max(1, _view.GetViewLineAtVerticalOffset(Math.Max(0, scrollTop - VerticalPadding)) - 2);
-        var last = Math.Min(_view.ViewLineCount, _view.GetViewLineAtVerticalOffset(scrollTop + ActualHeight) + 2);
-
-        if ((dirty & RenderDirty.Text) != 0)
+        var width = (float)Math.Max(1, ActualWidth);
+        var height = (float)Math.Max(1, ActualHeight);
+        var dpi = (float)(96.0 * (XamlRoot?.RasterizationScale ?? 1.0));
+        var currentSize = _swapChain.Size;
+        var needsNewSurface = Math.Abs(currentSize.Width - width) > 0.5 ||
+            Math.Abs(currentSize.Height - height) > 0.5 ||
+            Math.Abs(_swapChain.Dpi - dpi) > 0.5;
+        // Size changes are transactional: keep the last visible frame on the
+        // compositor until the new frame has been fully drawn and presented.
+        CanvasSwapChain? nextSurface = needsNewSurface
+            ? new CanvasSwapChain(_device!, width, height, dpi)
+            : null;
+        var target = nextSurface ?? _swapChain;
+        try
         {
-            var textStart = Stopwatch.GetTimestamp();
-            var linesVisited = RebuildTextLayer(first, last, scrollTop, scrollLeft);
-            _rendererPerformance.NoteTextLayer(Stopwatch.GetTimestamp() - textStart, linesVisited);
+            if (EnsureRenderLayers())
+                dirty |= RenderDirty.All;
+            // A newly sized back buffer needs ALL layers, not just the dirty
+            // selection/caret parts. The view parts already cache their draw lists.
+            if (nextSurface is not null)
+                dirty |= RenderDirty.All;
+            if (_textLayer is null)
+                return;
+
+            if (_lastRenderedVersion != _model.VersionId)
+                _lastRenderedVersion = _model.VersionId;
+
+            var scrollTop = ScrollHost.VerticalOffset;
+            var scrollLeft = ScrollHost.HorizontalOffset;
+            var first = Math.Max(1, _view.GetViewLineAtVerticalOffset(Math.Max(0, scrollTop - VerticalPadding)) - 2);
+            var last = Math.Min(_view.ViewLineCount, _view.GetViewLineAtVerticalOffset(scrollTop + ActualHeight) + 2);
+
+            if ((dirty & RenderDirty.Text) != 0)
+            {
+                var textStart = Stopwatch.GetTimestamp();
+                var linesVisited = RebuildTextLayer(first, last, scrollTop, scrollLeft);
+                _rendererPerformance.NoteTextLayer(Stopwatch.GetTimestamp() - textStart, linesVisited);
+            }
+            if ((dirty & RenderDirty.Selection) != 0)
+                _selectionViewPart.Invalidate();
+            if ((dirty & RenderDirty.Decorations) != 0)
+                _decorationsViewPart.Invalidate();
+            if ((dirty & RenderDirty.Diagnostics) != 0)
+                _diagnosticsViewPart.Invalidate();
+            if ((dirty & RenderDirty.Brackets) != 0)
+                _bracketViewPart.Invalidate();
+            if ((dirty & RenderDirty.Overview) != 0)
+                _overviewViewPart.Invalidate();
+            if ((dirty & RenderDirty.Caret) != 0)
+                _caretViewPart.Invalidate();
+
+            var viewPartContext = new EditorViewPartContext(
+                first, last, scrollTop, scrollLeft, ActualWidth, ActualHeight);
+            _selectionViewPart.Prepare(_device!, viewPartContext);
+            _decorationsViewPart.Prepare(_device!, viewPartContext);
+            _diagnosticsViewPart.Prepare(_device!, viewPartContext);
+            _bracketViewPart.Prepare(_device!, viewPartContext);
+            _overviewViewPart.Prepare(_device!, viewPartContext);
+            _caretViewPart.Prepare(_device!, viewPartContext);
+
+            // Close the drawing session before Present: the swap-chain front
+            // buffer must contain a complete frame prior to being made visible.
+            using (var ds = target.CreateDrawingSession(_backgroundColor))
+            {
+                _selectionViewPart.Composite(ds);
+                _decorationsViewPart.Composite(ds);
+                ds.DrawImage(_textLayer);
+                _bracketViewPart.Composite(ds);
+                _overviewViewPart.Composite(ds);
+                _diagnosticsViewPart.Composite(ds);
+                _caretViewPart.Composite(ds);
+            }
+            target.Present();
+            if (nextSurface is not null)
+            {
+                var previous = _swapChain;
+                _swapChain = nextSurface;
+                SwapChainPanel.SwapChain = nextSurface;
+                previous.Dispose();
+                nextSurface = null; // Ownership transferred to the live surface.
+            }
+            else if (SwapChainPanel.SwapChain is null)
+            {
+                // The initial surface was deliberately not attached until now.
+                SwapChainPanel.SwapChain = target;
+            }
+
+            if (!_wordWrap && _maxObservedLineWidth + GutterWidth + LeftPadding + RightPadding > ScrollExtent.Width)
+                UpdateExtent();
+            _rendererPerformance.NoteFrame(Stopwatch.GetTimestamp() - frameStart);
         }
-        if ((dirty & RenderDirty.Selection) != 0)
-            _selectionViewPart.Invalidate();
-        if ((dirty & RenderDirty.Decorations) != 0)
-            _decorationsViewPart.Invalidate();
-        if ((dirty & RenderDirty.Diagnostics) != 0)
-            _diagnosticsViewPart.Invalidate();
-        if ((dirty & RenderDirty.Brackets) != 0)
-            _bracketViewPart.Invalidate();
-        if ((dirty & RenderDirty.Overview) != 0)
-            _overviewViewPart.Invalidate();
-        if ((dirty & RenderDirty.Caret) != 0)
-            _caretViewPart.Invalidate();
-
-        var viewPartContext = new EditorViewPartContext(
-            first,
-            last,
-            scrollTop,
-            scrollLeft,
-            ActualWidth,
-            ActualHeight);
-        _selectionViewPart.Prepare(_device!, viewPartContext);
-        _decorationsViewPart.Prepare(_device!, viewPartContext);
-        _diagnosticsViewPart.Prepare(_device!, viewPartContext);
-        _bracketViewPart.Prepare(_device!, viewPartContext);
-        _overviewViewPart.Prepare(_device!, viewPartContext);
-        _caretViewPart.Prepare(_device!, viewPartContext);
-
-        using var ds = _swapChain.CreateDrawingSession(_backgroundColor);
-        _selectionViewPart.Composite(ds);
-        _decorationsViewPart.Composite(ds);
-        ds.DrawImage(_textLayer);
-        _bracketViewPart.Composite(ds);
-        _overviewViewPart.Composite(ds);
-        _diagnosticsViewPart.Composite(ds);
-        _caretViewPart.Composite(ds);
-        _swapChain.Present();
-
-        if (!_wordWrap && _maxObservedLineWidth + GutterWidth + LeftPadding + RightPadding > ScrollExtent.Width)
-            UpdateExtent();
-
-        _rendererPerformance.NoteFrame(Stopwatch.GetTimestamp() - frameStart);
+        finally
+        {
+            // Failed paints never replace the last good frame with a black one.
+            nextSurface?.Dispose();
+        }
     }
 
     private bool EnsureRenderLayers()
@@ -1115,18 +1325,29 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
         var width = (float)Math.Max(1, ActualWidth);
         var height = (float)Math.Max(1, ActualHeight);
         var dpi = (float)(96.0 * (XamlRoot?.RasterizationScale ?? 1.0));
+        // Viewport reflow is frequent, but re-allocating every offscreen GPU
+        // texture for every +/-1 DIP creates needless work during live resize.
+        // Grow in buckets and reuse the existing layer when the viewport shrinks.
+        // Reclaim very oversized layers after a large downsizing.
         if (_textLayer is not null &&
-            Math.Abs(_renderLayerWidth - width) <= 0.5f &&
-            Math.Abs(_renderLayerHeight - height) <= 0.5f &&
+            width <= _renderLayerWidth && height <= _renderLayerHeight &&
+            width >= _renderLayerWidth * 0.5f && height >= _renderLayerHeight * 0.5f &&
             Math.Abs(_renderLayerDpi - dpi) <= 0.5f)
-        {
             return false;
-        }
 
+        var allocationWidth = (float)(Math.Ceiling(width / 256.0) * 256.0);
+        var allocationHeight = (float)(Math.Ceiling(height / 256.0) * 256.0);
+        if (_textLayer is not null && Math.Abs(_renderLayerDpi - dpi) <= 0.5f)
+        {
+            if (width >= _renderLayerWidth * 0.5f)
+                allocationWidth = Math.Max(allocationWidth, _renderLayerWidth);
+            if (height >= _renderLayerHeight * 0.5f)
+                allocationHeight = Math.Max(allocationHeight, _renderLayerHeight);
+        }
         _textLayer?.Dispose();
-        _textLayer = new CanvasRenderTarget(_device, width, height, dpi);
-        _renderLayerWidth = width;
-        _renderLayerHeight = height;
+        _textLayer = new CanvasRenderTarget(_device, allocationWidth, allocationHeight, dpi);
+        _renderLayerWidth = allocationWidth;
+        _renderLayerHeight = allocationHeight;
         _renderLayerDpi = dpi;
         return true;
     }
@@ -1192,7 +1413,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
         FindWidget.Margin = new Thickness(0, 8, right, 0);
         // Keep all controls inside the editor on narrow windows.
         var available = Math.Max(0, ActualWidth - right - 20.0);
-        FindWidget.Width = Math.Min(536.0, available);
+        FindWidget.Width = Math.Min(584.0, available);
     }
 
     private double MinimapLeft => Math.Max(0, ActualWidth - (_showMinimap ? MinimapWidth : 0.0));
@@ -1407,7 +1628,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
     private void DrawCurrentLine(CanvasDrawingSession ds, double scrollTop)
     {
         var viewPosition = _view.ModelToView(_active);
-        var y = VerticalPadding + _view.GetViewLine(viewPosition.LineNumber).VerticalOffset - scrollTop;
+        var y = VerticalPadding + _view.GetViewLineVerticalOffset(viewPosition.LineNumber) - scrollTop;
         if (y + _lineHeight >= 0 && y <= ActualHeight)
             ds.FillRectangle(0, (float)y, (float)Math.Max(0, TextViewportRight), (float)_lineHeight, _currentLineColor);
     }
@@ -1440,7 +1661,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
                     new MonacoPosition(match.StartLineNumber, match.StartColumn),
                     new MonacoPosition(match.EndLineNumber, match.EndColumn),
                     first, last, scrollTop, scrollLeft,
-                    Color.FromArgb(105, 212, 169, 62));
+                    _findMatchColor);
                 rendered++;
             }
         }
@@ -1469,18 +1690,42 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
 
         for (var lineNumber = Math.Max(first, firstSelected); lineNumber <= Math.Min(last, lastSelected); lineNumber++)
         {
-            var line = _view.GetViewLine(lineNumber);
-            var layout = _layoutCache.GetOrCreate(lineNumber, line.Text, (float)_lineHeight);
-            var startIndex = lineNumber == startView.LineNumber ? Math.Clamp(startView.Column - 1, 0, line.Text.Length) : 0;
-            var endIndex = lineNumber == endView.LineNumber ? Math.Clamp(endView.Column - 1, 0, line.Text.Length) : line.Text.Length;
+            string text;
+            CanvasTextLayout layout;
+            double verticalOffset;
+            if (_lastRenderedVersion == _model.VersionId &&
+                _layoutCache.TryGetCached(lineNumber, out var cachedText, out var cachedLayout) &&
+                cachedLayout is not null)
+            {
+                text = cachedText;
+                layout = cachedLayout;
+                verticalOffset = _view.GetViewLineVerticalOffset(lineNumber);
+            }
+            else
+            {
+                // On a cache miss (e.g. freshly projected word-wrap fragment),
+                // populate the entry from the authoritative native view.
+                var line = _view.GetViewLine(lineNumber);
+                text = line.Text;
+                layout = _layoutCache.GetOrCreate(lineNumber, text, (float)_lineHeight);
+                verticalOffset = line.VerticalOffset;
+            }
+            var startIndex = lineNumber == startView.LineNumber ? Math.Clamp(startView.Column - 1, 0, text.Length) : 0;
+            var endIndex = lineNumber == endView.LineNumber ? Math.Clamp(endView.Column - 1, 0, text.Length) : text.Length;
             if (endIndex < startIndex)
                 (startIndex, endIndex) = (endIndex, startIndex);
-            var y = VerticalPadding + line.VerticalOffset - scrollTop;
-            var regions = TextRangeRegions(layout, line.Text, startIndex, endIndex);
+            var y = VerticalPadding + verticalOffset - scrollTop;
+            // ASCII LTR code lines are a single visual rectangle. DirectWrite's
+            // GetCharacterRegions() can traverse the full selected string and
+            // cause the increasingly long pause near a drag's final columns.
+            // Complex Unicode/bidi lines keep the exact native region path.
+            var regions = _layoutCache.CanUseFastSelectionRectangle(lineNumber)
+                ? Array.Empty<CanvasTextLayoutRegion>()
+                : TextRangeRegions(layout, text, startIndex, endIndex);
             if (regions.Length == 0)
             {
-                var x1 = CaretX(layout, line.Text, startIndex);
-                var x2 = CaretX(layout, line.Text, endIndex);
+                var x1 = CaretX(layout, text, startIndex);
+                var x2 = CaretX(layout, text, endIndex);
                 ds.FillRectangle(
                     (float)(GutterWidth + LeftPadding + Math.Min(x1, x2) - scrollLeft),
                     (float)y,
@@ -1690,12 +1935,25 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
         if (_layoutCache is null)
             return;
         var viewPosition = _view.ModelToView(position);
-        var line = _view.GetViewLine(viewPosition.LineNumber);
-        var y = VerticalPadding + line.VerticalOffset - scrollTop;
+        var y = VerticalPadding + _view.GetViewLineVerticalOffset(viewPosition.LineNumber) - scrollTop;
         if (y + _lineHeight < 0 || y > ActualHeight)
             return;
-        var layout = _layoutCache.GetOrCreate(line.ViewLineNumber, line.Text, (float)_lineHeight);
-        var x = CaretX(layout, line.Text, Math.Clamp(viewPosition.Column - 1, 0, line.Text.Length));
+        string text;
+        CanvasTextLayout layout;
+        if (_lastRenderedVersion == _model.VersionId &&
+            _layoutCache.TryGetCached(viewPosition.LineNumber, out var cachedText, out var cachedLayout) &&
+            cachedLayout is not null)
+        {
+            text = cachedText;
+            layout = cachedLayout;
+        }
+        else
+        {
+            var line = _view.GetViewLine(viewPosition.LineNumber);
+            text = line.Text;
+            layout = _layoutCache.GetOrCreate(line.ViewLineNumber, text, (float)_lineHeight);
+        }
+        var x = CaretX(layout, text, Math.Clamp(viewPosition.Column - 1, 0, text.Length));
         ds.FillRectangle(
             (float)(GutterWidth + LeftPadding + x - scrollLeft),
             (float)y,
@@ -1726,6 +1984,13 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
     private void SurfaceRoot_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
         using var methodSample = _methodProfiler.Measure("SurfaceRoot_PointerPressed");
+        // PointerPressed bubbles from the find/replace controls to SurfaceRoot.
+        // Never turn a click on that UI into an editor caret move, fold or drag.
+        if (IsPointerOverFindWidget(e) || IsChildOf(e.OriginalSource as DependencyObject, ContributionLayer))
+        {
+            e.Handled = true;
+            return;
+        }
         Focus(FocusState.Pointer);
         var pointerPoint = e.GetCurrentPoint(SurfaceRoot);
         var point = pointerPoint.Position;
@@ -1800,7 +2065,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
         var point = e.GetCurrentPoint(SurfaceRoot).Position;
         // Native flyouts, find controls and code-lens elements must not inherit the text cursor.
         var source = e.OriginalSource as DependencyObject;
-        var overOverlay = IsChildOf(source, FindWidget) || IsChildOf(source, ContributionLayer);
+        var overOverlay = IsPointerOverFindWidget(e) || IsChildOf(source, ContributionLayer);
         var cursor = _dragSelecting
             ? EditorPointerCursorKind.Text
             : EditorPointerCursorPolicy.Resolve(point.X, point.Y, ActualWidth, ActualHeight,
@@ -1819,9 +2084,25 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
         SetMouseCursor(cursor);
     }
 
+    private bool IsPointerOverFindWidget(PointerRoutedEventArgs e)
+    {
+        if (FindWidget.Visibility != Visibility.Visible)
+            return false;
+        if (IsChildOf(e.OriginalSource as DependencyObject, FindWidget))
+            return true;
+
+        // Defensive geometry check: even if a swap-chain/ScrollViewer is the
+        // routed source, the find pane wins within its own visible bounds.
+        if (FindWidget.ActualWidth <= 0 || FindWidget.ActualHeight <= 0)
+            return false;
+        var point = e.GetCurrentPoint(FindWidget).Position;
+        return point.X >= 0 && point.X < FindWidget.ActualWidth &&
+               point.Y >= 0 && point.Y < FindWidget.ActualHeight;
+    }
+
     private static bool IsChildOf(DependencyObject? source, DependencyObject ancestor)
     {
-        // Only called for the hover event, not for each rendered line or typed character.
+        // Routed input guard; never used in per-character drawing or text layout.
         for (var node = source; node is not null; node = VisualTreeHelper.GetParent(node))
             if (ReferenceEquals(node, ancestor))
                 return true;
@@ -1863,10 +2144,11 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
     {
         var wasSelecting = _dragSelecting;
         _dragSelecting = false;
+        ClearDragHitTestCache();
         if (wasSelecting && !_disposed)
         {
+            FinishDragSelectionNotifications();
             OnContributionsSelectionChanged();
-            _textInput?.NotifyLayoutChanged();
         }
         if (!_disposed)
             UpdateMouseCursor(e);
@@ -1875,14 +2157,15 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
     private void SurfaceRoot_PointerReleased(object sender, PointerRoutedEventArgs e)
     {
         using var methodSample = _methodProfiler.Measure("SurfaceRoot_PointerReleased");
-        var wasSelecting = _dragSelecting;
+        // UI buttons/text boxes own their pointer capture and release. Only a
+        // drag initiated by the editor is allowed to finish an editor selection.
+        if (!_dragSelecting)
+            return;
         _dragSelecting = false;
+        ClearDragHitTestCache();
         SurfaceRoot.ReleasePointerCapture(e.Pointer);
-        if (wasSelecting)
-        {
-            OnContributionsSelectionChanged();
-            _textInput?.NotifyLayoutChanged();
-        }
+        FinishDragSelectionNotifications();
+        OnContributionsSelectionChanged();
         UpdateMouseCursor(e);
         e.Handled = true;
     }
@@ -1894,11 +2177,41 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
             return _active;
         var docY = Math.Max(0, ScrollHost.VerticalOffset + y - VerticalPadding);
         var lineNumber = _view.GetViewLineAtVerticalOffset(docY);
-        var line = _view.GetViewLine(lineNumber);
-        var layout = _layoutCache.GetOrCreate(lineNumber, line.Text, (float)_lineHeight);
+        CanvasTextLayout layout;
+        string text;
+        // During drag, the same visual line is usually hit dozens of times.
+        // The native bridge allocates and marshals its full string on GetViewLine;
+        // comparing that string for each move still cost O(line length) in v2.
+        // Reuse it while both document version and layout-cache revision match.
+        if (_dragSelecting && _dragHitViewLine == lineNumber &&
+            _dragHitModelVersion == _model.VersionId &&
+            _dragHitLayoutRevision == _layoutCache.Revision &&
+            _dragHitLayout is not null && _dragHitText is not null)
+        {
+            layout = _dragHitLayout;
+            text = _dragHitText;
+        }
+        else
+        {
+            var line = _view.GetViewLine(lineNumber);
+            text = line.Text;
+            layout = _layoutCache.GetOrCreate(lineNumber, text, (float)_lineHeight);
+            _dragHitViewLine = lineNumber;
+            _dragHitModelVersion = _model.VersionId;
+            _dragHitLayoutRevision = _layoutCache.Revision;
+            _dragHitLayout = layout;
+            _dragHitText = text;
+        }
         var localX = Math.Max(0, ScrollHost.HorizontalOffset + x - GutterWidth - LeftPadding);
-        var column = NearestCaretColumn(layout, line.Text, (float)localX);
+        var column = NearestCaretColumn(layout, text, (float)localX);
         return _view.ViewToModel(new MonacoViewPosition(lineNumber, column));
+    }
+
+    private void ClearDragHitTestCache()
+    {
+        _dragHitViewLine = 0;
+        _dragHitText = null;
+        _dragHitLayout = null;
     }
 
     private static int NearestCaretColumn(CanvasTextLayout layout, string text, float x)
@@ -1906,26 +2219,51 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
         if (text.Length == 0)
             return 1;
 
-        // Bidi layouts are not monotonic in logical UTF-16 order, so binary searching
-        // caret X positions is incorrect for mixed RTL/LTR text. Evaluate grapheme-safe
-        // candidates directly; pointer hit testing is infrequent enough that O(n) is fine.
-        var bestOffset = 0;
-        var bestDistance = Math.Abs(CaretX(layout, text, 0) - x);
-        for (var offset = 0; offset < text.Length; )
+        // DirectWrite already does cluster- and bidi-aware hit testing. The previous
+        // per-pointer loop measured every caret and segmented the *entire* long line
+        // for every character: quadratic work during selection dragging.
+        // Use one native hit-test and snap only the hit cluster to a grapheme boundary.
+        layout.HitTest(x, 0, out var region, out var trailingSide);
+        var hit = Math.Clamp(region.CharacterIndex + (trailingSide ? region.CharacterCount : 0), 0, text.Length);
+        if (hit == 0 || hit == text.Length)
+            return hit + 1;
+
+        // Previous/Next are strict predecessor/successor APIs. Probe on either
+        // side so an existing boundary (including a bidi cluster edge) is kept.
+        // ASCII boundaries need no native grapheme marshaling at all. This is
+        // the overwhelmingly common case when dragging across long code lines.
+        if (text[hit - 1] <= 0x7f && text[hit] <= 0x7f &&
+            !(text[hit - 1] == '\r' && text[hit] == '\n'))
+            return hit + 1;
+
+        // Keep the native Unicode segmenter's full rules while bounding the
+        // marshaled string to a local span. Only fall back to the full line when
+        // a very long cluster straddles this span's boundary.
+        const int context = 256;
+        var start = Math.Max(0, hit - context);
+        var end = Math.Min(text.Length, hit + context);
+        if (start > 0 && char.IsLowSurrogate(text[start])) start--;
+        if (end < text.Length && char.IsHighSurrogate(text[end - 1])) end++;
+        var piece = text.Substring(start, end - start);
+        var localHit = hit - start;
+        var before = MonacoUnicode.PreviousGraphemeBoundary(piece, localHit + 1);
+        var after = MonacoUnicode.NextGraphemeBoundary(piece, localHit - 1);
+        if ((start > 0 && before == 0) || (end < text.Length && after == piece.Length))
         {
-            var distance = Math.Abs(CaretX(layout, text, offset) - x);
-            if (distance < bestDistance)
-            {
-                bestDistance = distance;
-                bestOffset = offset;
-            }
-            var next = MonacoUnicode.NextGraphemeBoundary(text, offset);
-            offset = next > offset ? next : offset + 1;
+            // Rare: combining cluster wider than the 256-character lookaround.
+            before = MonacoUnicode.PreviousGraphemeBoundary(text, hit + 1);
+            after = MonacoUnicode.NextGraphemeBoundary(text, hit - 1);
         }
-        var endDistance = Math.Abs(CaretX(layout, text, text.Length) - x);
-        if (endDistance < bestDistance)
-            bestOffset = text.Length;
-        return bestOffset + 1;
+        else
+        {
+            before += start;
+            after += start;
+        }
+        if (before == hit || after == hit)
+            return hit + 1;
+        var left = CaretX(layout, text, before);
+        var right = CaretX(layout, text, after);
+        return (Math.Abs(x - left) <= Math.Abs(x - right) ? before : after) + 1;
     }
 
     private void RegisterDefaultCommands()
@@ -2300,6 +2638,9 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
 
     private async void Editor_KeyDown(object sender, KeyRoutedEventArgs e)
     {
+        // Find / replace text and buttons must not trigger TSF/editor shortcuts.
+        if (IsFindOpen && IsChildOf(e.OriginalSource as DependencyObject, FindWidget))
+            return;
         // A TSF-aware application must offer the Win32-style key message to ITfKeystrokeMgr
         // before application commands/text handling. If an active text service eats it,
         // stop here; otherwise Monaco keybindings/CharacterReceived continue normally.
@@ -2360,6 +2701,8 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
 
     private void Editor_KeyUp(object sender, KeyRoutedEventArgs e)
     {
+        if (IsFindOpen && IsChildOf(e.OriginalSource as DependencyObject, FindWidget))
+            return;
         var tsfKey = e.OriginalKey == VirtualKey.None ? e.Key : e.OriginalKey;
         if (_textInput?.TryHandleKeyUp(
                 (uint)tsfKey,
@@ -2417,6 +2760,8 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
     private void Editor_CharacterReceived(UIElement sender, CharacterReceivedRoutedEventArgs e)
     {
         using var methodSample = _methodProfiler.Measure("Editor_CharacterReceived");
+        if (IsFindOpen && IsChildOf(e.OriginalSource as DependencyObject, FindWidget))
+            return;
         if (_textInput?.SuppressCharacterReceived == true)
             return; // The active text service explicitly owns this character delivery path.
         var ctrl = IsKeyDown(VirtualKey.Control);
@@ -2933,11 +3278,22 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
         return new MonacoPosition(line, column);
     }
 
-    private void RestoreSelectionOffsets(nuint anchorOffset, nuint activeOffset)
+    private IReadOnlyList<MonacoUndoSelection> CaptureUndoSelections() =>
+        EnumerateSelectionStates().Select(selection => new MonacoUndoSelection(
+            _model.GetOffsetAt(selection.Anchor), _model.GetOffsetAt(selection.Active))).ToArray();
+
+    private void RestoreHistorySelections(IReadOnlyList<MonacoUndoSelection> restored)
     {
+        if (restored.Count == 0)
+            return;
         var max = _model.Length;
-        _anchor = _model.GetPositionAt(anchorOffset <= max ? anchorOffset : max);
-        _active = _model.GetPositionAt(activeOffset <= max ? activeOffset : max);
+        MonacoPosition PositionAt(nuint offset) => _model.GetPositionAt(offset <= max ? offset : max);
+        _anchor = PositionAt(restored[0].Anchor);
+        _active = PositionAt(restored[0].Active);
+        _secondarySelections.Clear();
+        for (var i = 1; i < restored.Count; ++i)
+            _secondarySelections.Add((PositionAt(restored[i].Anchor), PositionAt(restored[i].Active)));
+        _preferredCaretX = null;
     }
 
     private void OnSelectionChanged()
@@ -2950,10 +3306,65 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
         // Drag selection fires on every character boundary. Language widgets are
         // refreshed on release, not by canceling/recreating tasks while dragging.
         if (!_dragSelecting) OnContributionsSelectionChanged();
-        RaiseAccessibilitySelectionChanged();
-        _textInput?.NotifySelectionChanged();
-        if (!_dragSelecting) _textInput?.NotifyLayoutChanged();
+        if (_dragSelecting)
+        {
+            // Expose the live selection to query-based clients but marshal any
+            // cross-process TSF/UIA callbacks away from the hot pointer path.
+            QueueDragSelectionNotifications();
+        }
+        else
+        {
+            RaiseAccessibilitySelectionChanged();
+            _textInput?.NotifySelectionChanged();
+            _textInput?.NotifyLayoutChanged();
+        }
         Render(RenderDirty.Selection | RenderDirty.Brackets | RenderDirty.Overview | RenderDirty.Caret);
+    }
+
+    private void QueueDragSelectionNotifications()
+    {
+        if (_dragNotificationsQueued)
+            return;
+        _dragNotificationsQueued = true;
+        if (!DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        {
+            if (!_dragNotificationsQueued)
+                return;
+            _dragNotificationsQueued = false;
+            if (_disposed)
+                return;
+            RaiseAccessibilitySelectionChanged();
+            _textInput?.NotifySelectionChanged();
+            _textInput?.NotifyLayoutChanged();
+        }))
+        {
+            _dragNotificationsQueued = false;
+            if (!_disposed)
+            {
+                RaiseAccessibilitySelectionChanged();
+                _textInput?.NotifySelectionChanged();
+                _textInput?.NotifyLayoutChanged();
+            }
+        }
+    }
+
+    private void FinishDragSelectionNotifications()
+    {
+        // PointerReleased must not block on synchronous, possibly cross-process
+        // TSF/automation listeners. The final notification reads the latest
+        // caret/range from the model on the next idle dispatcher turn.
+        // IME composition remains synchronous for correctness.
+        if (_textInput?.IsComposing == true)
+        {
+            _dragNotificationsQueued = false;
+            RaiseAccessibilitySelectionChanged();
+            _textInput.NotifySelectionChanged();
+            _textInput.NotifyLayoutChanged();
+        }
+        else
+        {
+            QueueDragSelectionNotifications();
+        }
     }
 
     private void RevealCaret()
@@ -2980,6 +3391,9 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
     private void AfterProjectionChanged(bool notifyModel)
     {
         using var methodSample = _methodProfiler.Measure("AfterProjectionChanged");
+        // The editor has finished moving its caret after the edit. Commit the
+        // final post-edit snapshot rather than an inferred offset.
+        _model.CommitUndoSelectionsAfterEdit();
         _ = notifyModel; // Kept for source compatibility with existing call sites.
         _modelRefreshQueued = false;
         _preferredCaretX = null;

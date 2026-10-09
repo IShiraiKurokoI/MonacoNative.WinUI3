@@ -21,6 +21,7 @@ internal sealed class LineLayoutCache : IDisposable
         public required string Text { get; init; }
         public required CanvasTextLayout Layout { get; init; }
         public required float LineHeight { get; init; }
+        public required bool SimpleLeftToRight { get; init; }
         public long Stamp { get; set; }
     }
 
@@ -30,6 +31,7 @@ internal sealed class LineLayoutCache : IDisposable
     private readonly int _capacity;
     private readonly Func<string, CanvasTextDirection>? _directionResolver;
     private long _stamp;
+    private long _revision;
     private long _requests;
     private long _hits;
     private long _misses;
@@ -38,6 +40,39 @@ internal sealed class LineLayoutCache : IDisposable
     private long _evictions;
     private long _spliceInvalidated;
     private long _spliceMoved;
+
+    // Invalidates drag hit-test references when a layout is replaced, evicted,
+    // or its native view-line projection changes.
+    public long Revision => _revision;
+
+    public bool CanUseFastSelectionRectangle(int viewLineNumber) =>
+        _entries.TryGetValue(viewLineNumber, out var entry) && entry.SimpleLeftToRight;
+
+    // Render-only fast path: the document/projection has not changed, so the
+    // existing text and shaped layout already owned by this cache are current.
+    // Avoid native GetViewLineText copying an entire 100K+ UTF-16 line for each
+    // selection frame and re-running String.Equals on every hit.
+    public bool TryGetCached(int viewLineNumber, out string text, out CanvasTextLayout? layout)
+    {
+        if (_entries.TryGetValue(viewLineNumber, out var entry))
+        {
+            entry.Stamp = ++_stamp;
+            text = entry.Text;
+            layout = entry.Layout;
+            return true;
+        }
+        text = string.Empty;
+        layout = null;
+        return false;
+    }
+
+    private static bool IsAscii(string text)
+    {
+        foreach (var ch in text)
+            if (ch > 0x7f)
+                return false;
+        return true;
+    }
 
     public LineLayoutCacheStatistics Statistics => new(
         _requests, _hits, _misses, _entriesCreated, _entriesDisposed, _evictions,
@@ -80,6 +115,7 @@ internal sealed class LineLayoutCache : IDisposable
         {
             entry.Layout.Dispose();
             _entriesDisposed++;
+            _revision++;
             _entries.Remove(viewLineNumber);
         }
 
@@ -87,7 +123,13 @@ internal sealed class LineLayoutCache : IDisposable
         if (_directionResolver is not null)
             layout.Direction = _directionResolver(text);
         configure?.Invoke(layout);
-        var next = new Entry { Text = text, Layout = layout, LineHeight = lineHeight, Stamp = ++_stamp };
+        var simpleLtr = IsAscii(text) && layout.Direction == CanvasTextDirection.LeftToRightThenTopToBottom;
+        var next = new Entry
+        {
+            Text = text, Layout = layout, LineHeight = lineHeight,
+            SimpleLeftToRight = simpleLtr, Stamp = ++_stamp,
+        };
+        _revision++;
         _entriesCreated++;
         _entries[viewLineNumber] = next;
         Trim();
@@ -96,6 +138,7 @@ internal sealed class LineLayoutCache : IDisposable
 
     public void ApplySplice(int firstViewLineNumber, int oldViewLineCount, int newViewLineCount)
     {
+        _revision++;
         var first = Math.Max(1, firstViewLineNumber);
         var oldCount = Math.Max(0, oldViewLineCount);
         var newCount = Math.Max(0, newViewLineCount);
@@ -132,6 +175,7 @@ internal sealed class LineLayoutCache : IDisposable
 
     public void InvalidateFrom(int firstViewLineNumber)
     {
+        _revision++;
         var keys = _entries.Keys.Where(key => key >= firstViewLineNumber).ToArray();
         foreach (var key in keys)
         {
@@ -143,6 +187,7 @@ internal sealed class LineLayoutCache : IDisposable
 
     public void Clear()
     {
+        _revision++;
         foreach (var entry in _entries.Values)
         {
             entry.Layout.Dispose();
@@ -160,6 +205,7 @@ internal sealed class LineLayoutCache : IDisposable
                 break;
             oldest.Value.Layout.Dispose();
             _entriesDisposed++;
+            _revision++;
             _evictions++;
             _entries.Remove(oldest.Key);
         }

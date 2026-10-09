@@ -22,7 +22,7 @@ Tests exercise pure cursor classification and profiler aggregation on all availa
 
 ## Other constraints
 
-- Preserve the sole [native ABI 1.2.0 contract](NATIVE_ABI.md), including all 88 exports and layout checks, and Monaco-derived grapheme-safe navigation and performance work-count ceilings.
+- Preserve the sole [native ABI 1.3.0 contract](NATIVE_ABI.md), including all 91 exports and layout checks, and Monaco-derived grapheme-safe navigation and performance work-count ceilings.
 - Use generated XAML/Win2D resources only from the UI thread; tear down subscriptions and cursors on disposal.
 - No WebView2, hidden TextBox proxy, TS/JS scripting runtime, or browser editor fallback.
 - Package scripts maintain Windows SDK 26100 compile targeting with App SDK 2.4 pinned independently.

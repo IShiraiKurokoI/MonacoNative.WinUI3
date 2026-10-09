@@ -216,6 +216,39 @@ namespace
         mn_model_destroy(handle);
     }
 
+    void UndoCursorSnapshotAbi()
+    {
+        auto handle = mn_model_create(AbiText(u"hi\nthere").c_str(), "plaintext");
+        MN_CHECK(handle != nullptr);
+        MN_CHECK_EQ(mn_model_copy_restored_selections(handle, nullptr, 0), 0U);
+        MN_CHECK_EQ(mn_model_set_undo_selections(handle, nullptr, 0, nullptr, 0), 0);
+        MN_CHECK_EQ(mn_model_replace(handle, 8, 8, AbiText(u"!").c_str()), 1);
+        const mn_undo_selection before[]{{8, 8}, {0, 2}};
+        const mn_undo_selection provisional[]{{9, 9}};
+        const mn_undo_selection after[]{{9, 9}, {2, 2}};
+        MN_CHECK_EQ(mn_model_set_undo_selections(handle, before, 2, provisional, 1), 1);
+        MN_CHECK_EQ(mn_model_set_undo_after_selections(handle, after, 2), 1);
+        MN_CHECK_EQ(mn_model_undo(handle), 1);
+        MN_CHECK_EQ(CopyText(handle), std::u16string(u"hi\nthere"));
+        MN_CHECK_EQ(mn_model_copy_restored_selections(handle, nullptr, 0), 2U);
+        mn_undo_selection result[2]{{999, 999}, {999, 999}};
+        MN_CHECK_EQ(mn_model_copy_restored_selections(handle, result, 1), 2U);
+        MN_CHECK_EQ(result[0].anchor, 999U); // Insufficient capacity must not write.
+        MN_CHECK_EQ(mn_model_copy_restored_selections(handle, result, 2), 2U);
+        MN_CHECK_EQ(result[0].anchor, 8U);
+        MN_CHECK_EQ(result[1].active, 2U);
+        MN_CHECK_EQ(mn_model_redo(handle), 1);
+        MN_CHECK_EQ(mn_model_copy_restored_selections(handle, result, 2), 2U);
+        MN_CHECK_EQ(result[0].active, 9U);
+        MN_CHECK_EQ(result[1].anchor, 2U);
+        MN_CHECK_EQ(mn_model_replace(handle, 0, 0, AbiText(u"x").c_str()), 1);
+        MN_CHECK_EQ(mn_model_copy_restored_selections(handle, nullptr, 0), 0U);
+        mn_model_destroy(handle);
+
+        MN_CHECK_EQ(mn_model_copy_restored_selections(nullptr, nullptr, 0), 0U);
+        MN_CHECK_EQ(mn_model_set_undo_after_selections(nullptr, after, 2), 0);
+    }
+
 
     double MN_CALL MeasureDoubleWidth(void*, const mn_char16*, std::size_t length)
     {
@@ -455,7 +488,7 @@ int main(int argc, char* argv[])
         const char* name;
         void (*run)();
     };
-    constexpr std::array<Case, 13> cases{{
+    constexpr std::array<Case, 14> cases{{
         {"version", "current native ABI version and layout", AbiVersionContract},
         {"lifetime", "lifetime and properties", LifetimeAndBasicProperties},
         {"copy", "copy APIs and truncation", CopyApisAndTruncation},
@@ -465,6 +498,7 @@ int main(int argc, char* argv[])
         {"view", "view projection and measured wrapping", ViewProjectionAndMeasuredWrapping},
         {"view_null", "view null contract", ViewNullContract},
         {"undo", "undo transaction ABI", UndoTransactionAbi},
+        {"undo_cursor", "undo cursor selection ABI", UndoCursorSnapshotAbi},
         {"diff", "diff ABI", DiffAbi},
         {"unicode", "unicode segmentation ABI", UnicodeSegmentationAbi},
         {"keybinding", "keybinding ABI", KeybindingAbi},

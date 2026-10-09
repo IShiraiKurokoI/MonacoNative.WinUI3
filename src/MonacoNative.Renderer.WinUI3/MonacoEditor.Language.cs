@@ -233,6 +233,18 @@ public sealed partial class MonacoEditor
             _syntaxInvalidColor = _foregroundColor;
             return;
         }
+        if (_lastTheme == Microsoft.UI.Xaml.ElementTheme.Light)
+        {
+            // VS Code Light Modern inherits Light+ token colors, not Dark+.
+            _syntaxKeywordColor = Color.FromArgb(255, 0, 0, 255);
+            _syntaxStringColor = Color.FromArgb(255, 163, 21, 21);
+            _syntaxCommentColor = Color.FromArgb(255, 0, 128, 0);
+            _syntaxNumberColor = Color.FromArgb(255, 9, 134, 88);
+            _syntaxTypeColor = Color.FromArgb(255, 38, 127, 153);
+            _syntaxOperatorColor = _foregroundColor;
+            _syntaxInvalidColor = Color.FromArgb(255, 205, 49, 49);
+            return;
+        }
         _syntaxKeywordColor = Color.FromArgb(255, 86, 156, 214);
         _syntaxStringColor = Color.FromArgb(255, 206, 145, 120);
         _syntaxCommentColor = Color.FromArgb(255, 106, 153, 85);
@@ -321,9 +333,15 @@ public sealed partial class MonacoEditor
         "number" => _syntaxNumberColor,
         "type" or "class" or "struct" or "interface" or "enum" or "typeParameter" => _syntaxTypeColor,
         "operator" => _syntaxOperatorColor,
-        "namespace" or "function" or "method" or "property" or "event" => Color.FromArgb(255, 220, 220, 170),
-        "parameter" or "variable" or "enumMember" => Color.FromArgb(255, 156, 220, 254),
-        "macro" or "decorator" => Color.FromArgb(255, 197, 134, 192),
+        "namespace" or "function" or "method" or "property" or "event" => _lastHighContrast == true
+            ? _foregroundColor : _lastTheme == Microsoft.UI.Xaml.ElementTheme.Light
+                ? Color.FromArgb(255, 121, 94, 38) : Color.FromArgb(255, 220, 220, 170),
+        "parameter" or "variable" or "enumMember" => _lastHighContrast == true
+            ? _foregroundColor : _lastTheme == Microsoft.UI.Xaml.ElementTheme.Light
+                ? Color.FromArgb(255, 0, 16, 128) : Color.FromArgb(255, 156, 220, 254),
+        "macro" or "decorator" => _lastHighContrast == true
+            ? _foregroundColor : _lastTheme == Microsoft.UI.Xaml.ElementTheme.Light
+                ? Color.FromArgb(255, 175, 0, 219) : Color.FromArgb(255, 197, 134, 192),
         _ => null,
     };
 

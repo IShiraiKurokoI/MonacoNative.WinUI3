@@ -157,7 +157,10 @@ public sealed partial class MainWindow : Window
     {
         if (_updatingFeatureToggles || Editor is null || sender is not ToggleMenuFlyoutItem toggle || toggle.Tag is not string key)
             return;
-        var enabled = toggle.IsChecked;
+        // WinUI's ToggleMenuFlyoutItem.Click can observe the check visual before
+        // its new state is committed. Toggle from the editor's authoritative
+        // current value, never from the menu item's possibly stale IsChecked.
+        var enabled = !GetFeatureState(key);
         switch (key)
         {
             case "wordWrap": Editor.WordWrap = enabled; break;
@@ -171,6 +174,17 @@ public sealed partial class MainWindow : Window
             case "inlineCompletion": Editor.InlineCompletionsEnabled = enabled; break;
             case "stickyScroll": Editor.StickyScrollEnabled = enabled; break;
         }
+        // Keep the menu check and editor state synchronized in this same Click.
+        toggle.IsChecked = GetFeatureState(key);
+        // Some view options control XAML overlays and do not explicitly request
+        // a full paint. Commit the effective state before the flyout closes.
+        Editor.CommitViewOptions();
+        _ = DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        {
+            // Also reconcile if the MenuFlyoutItem template updates IsChecked
+            // after its Click handlers have run.
+            SynchronizeFeatureToggles();
+        });
     }
 
     private void SynchronizeFeatureToggles()
@@ -304,6 +318,7 @@ public sealed partial class MainWindow : Window
         AppRoot.RequestedTheme = theme;
         Editor.RequestedTheme = theme;
         Editor.RefreshEditorTheme();
+        Editor.FlushPendingRender();
         if (!_refreshingThemeOptions)
             RefreshThemeOptions();
         UpdateStatus();

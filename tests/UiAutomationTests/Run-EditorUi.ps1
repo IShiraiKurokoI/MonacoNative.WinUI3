@@ -54,6 +54,23 @@ function CheckCursor($state, [string]$expected) {
     $name = Until { $state.Current.Name -match "Cursor=$expected(?:;|$)" } "cursor=$expected" 3500
     Check ($null -ne $name) "hover cursor is $expected"
 }
+function GetCaret($editor) {
+    # Read the actual UIA TextPattern caret, not a cached status-bar value.
+    $pattern = [System.Windows.Automation.TextPattern]$editor.GetCurrentPattern(
+        [System.Windows.Automation.TextPattern]::Pattern)
+    $selections = $pattern.GetSelection()
+    if ($selections.Count -eq 0) { throw 'Editor UIA did not expose a caret range.' }
+    $prefixRange = $pattern.DocumentRange.Clone()
+    $prefixRange.MoveEndpointByRange(
+        [System.Windows.Automation.TextPatternRangeEndpoint]::End,
+        $selections[0], [System.Windows.Automation.TextPatternRangeEndpoint]::End)
+    $prefix = $prefixRange.GetText(-1)
+    $lastNewline = $prefix.LastIndexOf("`n")
+    return [pscustomobject]@{
+        Line=1 + [regex]::Matches($prefix, "`n").Count
+        Column=$prefix.Length - $lastNewline
+    }
+}
 
 try {
     if (-not [Environment]::UserInteractive) { throw 'UI automation requires an interactive desktop session.' }
@@ -134,15 +151,34 @@ public static class WinUiTestMouse {
     if ($togglePattern.Current.ToggleState -ne [System.Windows.Automation.ToggleState]::On) { $togglePattern.Toggle() }
     Until { $state.Current.Name -like '*Profile=on*' } 'profiler enabled' | Out-Null
     [WinUiTestMouse]::Click($cx, $cy)
+    Start-Sleep -Milliseconds 120
+    $beforeTypingCaret = GetCaret $editor
     [System.Windows.Forms.SendKeys]::SendWait('abc')
     $edited = Until { $text = GetEditorText $editor; if ($text.Length -ge $source.Length + 3) { return $text } } 'keyboard insert'
     Check ($edited.Length -ge $source.Length + 3) 'keyboard typing changes document through native input path'
+    $afterTypingCaret = Until {
+        $caret = GetCaret $editor
+        if ($caret.Line -eq $beforeTypingCaret.Line -and
+            $caret.Column -eq ($beforeTypingCaret.Column + 3)) { return $caret }
+    } 'typing moves caret by three characters'
+    Check ($afterTypingCaret.Column -eq ($beforeTypingCaret.Column + 3)) 'typing places caret after inserted characters'
     [System.Windows.Forms.SendKeys]::SendWait('^z')
     $undone = Until { $text = GetEditorText $editor; if ($text.Length -lt $edited.Length) { return $text } } 'Ctrl+Z undo'
     Check ($undone.Length -lt $edited.Length) 'undo reduces inserted text'
+    $undoCaret = Until {
+        $caret = GetCaret $editor
+        if ($caret.Line -eq $afterTypingCaret.Line -and
+            $caret.Column -eq ($afterTypingCaret.Column - ($edited.Length - $undone.Length))) { return $caret }
+    } 'Ctrl+Z restores preceding caret position'
+    Check ($undoCaret.Column -eq ($afterTypingCaret.Column - ($edited.Length - $undone.Length))) 'Ctrl+Z restores exact caret column'
     [System.Windows.Forms.SendKeys]::SendWait('^y')
     $redone = Until { $text = GetEditorText $editor; if ($text.Length -gt $undone.Length) { return $text } } 'Ctrl+Y redo'
     Check ($redone.Length -gt $undone.Length) 'redo restores inserted text'
+    $redoCaret = Until {
+        $caret = GetCaret $editor
+        if ($caret.Line -eq $afterTypingCaret.Line -and $caret.Column -eq $afterTypingCaret.Column) { return $caret }
+    } 'Ctrl+Y restores following caret position'
+    Check ($redoCaret.Column -eq $afterTypingCaret.Column) 'Ctrl+Y restores exact caret column'
 
     [WinUiTestMouse]::Move($cx,$cy)
     [WinUiTestMouse]::Down()

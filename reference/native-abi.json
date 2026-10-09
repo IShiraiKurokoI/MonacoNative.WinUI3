@@ -1,6 +1,6 @@
 {
-  "abiVersion": "1.2.0",
-  "packedVersion": "0x00010200",
+  "abiVersion": "1.3.0",
+  "packedVersion": "0x00010300",
   "architectures": [
     "win-x64",
     "win-arm64"
@@ -17,6 +17,9 @@
     "mn_model_can_redo",
     "mn_model_undo",
     "mn_model_redo",
+    "mn_model_set_undo_selections",
+    "mn_model_set_undo_after_selections",
+    "mn_model_copy_restored_selections",
     "mn_model_begin_undo_transaction",
     "mn_model_end_undo_transaction",
     "mn_model_rollback_undo_transaction",
@@ -122,6 +125,9 @@
     },
     "mn_keybinding_resolution": {
       "size64": 32
+    },
+    "mn_undo_selection": {
+      "size64": 16
     }
   }
 }
