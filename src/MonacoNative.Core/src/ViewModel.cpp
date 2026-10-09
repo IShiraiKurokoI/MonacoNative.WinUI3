@@ -56,8 +56,14 @@ namespace MonacoNative::Core
         {
             return;
         }
+        const auto previous = wrapColumn_;
         wrapColumn_ = normalized;
-        Rebuild();
+        // Measured wrapping supersedes a column limit; changing the inactive
+        // setting must not reproject even one line.
+        if (wrapWidth_ <= 0.0)
+        {
+            ReflowWrappingChange(wrapWidth_, previous);
+        }
     }
 
     std::int32_t ViewModel::WrapColumn() const noexcept
@@ -72,8 +78,9 @@ namespace MonacoNative::Core
         {
             return;
         }
+        const auto previous = wrapWidth_;
         wrapWidth_ = normalized;
-        Rebuild();
+        ReflowWrappingChange(previous, wrapColumn_);
     }
 
     double ViewModel::WrapWidth() const noexcept
@@ -107,8 +114,19 @@ namespace MonacoNative::Core
         {
             return;
         }
+        const auto previous = lineHeight_;
         lineHeight_ = normalized;
-        Rebuild();
+        // A font-independent line-height change affects only the vertical
+        // prefix sums, not text shaping, line breaks, folding or model mapping.
+        auto heights = modelLineBlockHeights_.Values();
+        const auto counts = modelLineViewCounts_.Values();
+        for (std::size_t i = 0; i < heights.size(); ++i)
+        {
+            heights[i] += static_cast<double>(counts[i]) * (normalized - previous);
+        }
+        modelLineBlockHeights_.Reset(heights);
+        totalHeight_ = leadingZoneHeight_ + modelLineBlockHeights_.Total();
+        lastProjectionUpdateStats_ = ViewProjectionUpdateStats{0, 0, 0, 0, counts.size()};
     }
 
     double ViewModel::LineHeight() const noexcept
@@ -407,6 +425,180 @@ namespace MonacoNative::Core
         pendingFoldingProjectionChange_ = false;
     }
 
+    void ViewModel::ReflowWrappingChange(double previousWrapWidth, std::int32_t previousWrapColumn)
+    {
+        // Keep the existing projected model lines intact and only recalculate
+        // those whose wrapping could actually change. This avoids the old full
+        // Rebuild() path, with its model text copies, injection walks, grapheme
+        // segmentation, and DirectWrite calls for every short, unaffected line.
+        // Counts and block heights are reindexed together after all changes.
+        if (modelLineViewLines_.size() != model_->GetLineCount())
+        {
+            Rebuild();
+            return;
+        }
+
+        // Most viewport resizes affect only a few long lines. Keep their
+        // prefix-sum nodes stable; rebuilding both trees would turn even a
+        // single affected model line into an O(document length) tree update.
+        struct CountChange final
+        {
+            std::size_t modelIndex{};
+            std::int64_t oldCount{};
+            std::int64_t newCount{};
+        };
+        std::vector<CountChange> countChanges;
+        const bool hasMeasuredWrap = wrapWidth_ > 0.0 && textMeasurer_;
+        const bool hasColumnWrap = !hasMeasuredWrap && wrapColumn_ > 0;
+        std::uint64_t recomputed = 0;
+        std::uint64_t recomputedFragments = 0;
+        std::uint64_t reused = 0;
+        for (std::size_t i = 0; i < modelLineViewLines_.size(); ++i)
+        {
+            auto& fragments = modelLineViewLines_[i];
+            if (fragments.empty())
+            {
+                ++reused;
+                continue;
+            }
+
+            bool unchanged = false;
+            if (fragments.size() == 1)
+            {
+                auto& only = fragments.front();
+                // A single view line is guaranteed to stay single as the same
+                // measured wrap width or the same column limit is increased.
+                if (hasMeasuredWrap && previousWrapWidth > 0.0 &&
+                    wrapWidth_ >= previousWrapWidth)
+                {
+                    unchanged = true;
+                }
+                else if (hasColumnWrap && previousWrapWidth <= 0.0 &&
+                    previousWrapColumn > 0 && wrapColumn_ >= previousWrapColumn)
+                {
+                    unchanged = true;
+                }
+                else if (!hasMeasuredWrap && !hasColumnWrap)
+                {
+                    unchanged = true;
+                }
+                else if (hasColumnWrap && only.text.size() <= static_cast<std::size_t>(wrapColumn_))
+                {
+                    // UTF-16 length bounds grapheme count from above.
+                    unchanged = true;
+                }
+                else if (hasMeasuredWrap)
+                {
+                    if (only.fullProjectedWidth < 0.0)
+                    {
+                        only.fullProjectedWidth = textMeasurer_->Measure(only.text);
+                    }
+                    unchanged = only.fullProjectedWidth <= wrapWidth_;
+                }
+            }
+
+            if (unchanged)
+            {
+                ++reused;
+                continue;
+            }
+
+            // Joining the old visual fragments reconstructs the exact model
+            // projection (including injected-text boundary affinities) without
+            // rereading the document or resolving injections a second time.
+            ProjectedLine projected;
+            std::size_t fullLength = 0;
+            for (const auto& fragment : fragments)
+            {
+                fullLength += fragment.text.size();
+            }
+            projected.text.reserve(fullLength);
+            projected.boundaryModelColumns.reserve(fullLength + 1);
+            projected.canonicalModelBoundaries.reserve(fullLength + 1);
+            for (const auto& fragment : fragments)
+            {
+                const auto skipBoundary = !projected.boundaryModelColumns.empty() ? 1 : 0;
+                projected.text += fragment.text;
+                projected.boundaryModelColumns.insert(
+                    projected.boundaryModelColumns.end(),
+                    fragment.boundaryModelColumns.begin() + skipBoundary,
+                    fragment.boundaryModelColumns.end());
+                projected.canonicalModelBoundaries.insert(
+                    projected.canonicalModelBoundaries.end(),
+                    fragment.canonicalModelBoundaries.begin() + skipBoundary,
+                    fragment.canonicalModelBoundaries.end());
+            }
+
+            const auto segments = ComputeWrapSegments(projected.text);
+            const double cachedWidth = fragments.front().fullProjectedWidth;
+            std::vector<ViewLine> updated;
+            updated.reserve(segments.size());
+            for (std::size_t index = 0; index < segments.size(); ++index)
+            {
+                const auto [begin, end] = segments[index];
+                ViewLine line{};
+                line.modelLineNumber = static_cast<std::int32_t>(i + 1);
+                line.startColumn = projected.boundaryModelColumns[begin];
+                line.endColumn = projected.boundaryModelColumns[end];
+                line.wrappedIndex = static_cast<std::int32_t>(index);
+                line.text = projected.text.substr(begin, end - begin);
+                line.boundaryModelColumns.assign(
+                    projected.boundaryModelColumns.begin() + static_cast<std::ptrdiff_t>(begin),
+                    projected.boundaryModelColumns.begin() + static_cast<std::ptrdiff_t>(end + 1));
+                line.canonicalModelBoundaries.assign(
+                    projected.canonicalModelBoundaries.begin() + static_cast<std::ptrdiff_t>(begin),
+                    projected.canonicalModelBoundaries.begin() + static_cast<std::ptrdiff_t>(end + 1));
+                if (index == 0)
+                {
+                    line.fullProjectedWidth = cachedWidth;
+                }
+                updated.push_back(std::move(line));
+            }
+            ++recomputed;
+            recomputedFragments += updated.size();
+            const auto previousCount = static_cast<std::int64_t>(fragments.size());
+            const auto newCount = static_cast<std::int64_t>(updated.size());
+            if (newCount != previousCount)
+            {
+                countChanges.push_back(CountChange{i, previousCount, newCount});
+            }
+            fragments = std::move(updated);
+        }
+
+        if (!countChanges.empty())
+        {
+            if (countChanges.size() * 8 < modelLineViewLines_.size())
+            {
+                // Sparse change: O(changed lines * log(model lines)).
+                for (const auto& change : countChanges)
+                {
+                    modelLineViewCounts_.SetValue(change.modelIndex, change.newCount);
+                    modelLineBlockHeights_.SetValue(change.modelIndex,
+                        modelLineBlockHeights_.GetValue(change.modelIndex) +
+                        static_cast<double>(change.newCount - change.oldCount) * lineHeight_);
+                }
+            }
+            else
+            {
+                // Dense change: bulk build the count/height prefix indexes once.
+                auto counts = modelLineViewCounts_.Values();
+                auto heights = modelLineBlockHeights_.Values();
+                for (const auto& change : countChanges)
+                {
+                    counts[change.modelIndex] = change.newCount;
+                    heights[change.modelIndex] +=
+                        static_cast<double>(change.newCount - change.oldCount) * lineHeight_;
+                }
+                modelLineViewCounts_.Reset(counts);
+                modelLineBlockHeights_.Reset(heights);
+            }
+            totalHeight_ = leadingZoneHeight_ + modelLineBlockHeights_.Total();
+        }
+        lastProjectionUpdateStats_ = ViewProjectionUpdateStats{
+            recomputed, recomputedFragments, 0, 0, reused,
+        };
+    }
+
     std::int32_t ViewModel::ViewLineCount() const noexcept
     {
         return static_cast<std::int32_t>(modelLineViewCounts_.Total());
@@ -476,19 +668,31 @@ namespace MonacoNative::Core
         else
         {
             const auto& projectedLines = modelLineViewLines_[static_cast<std::size_t>(modelLine - 1)];
-            for (std::size_t wrapped = 0; wrapped < projectedLines.size(); ++wrapped)
-            {
-                const auto viewLineNumber = range.first + static_cast<std::int32_t>(wrapped);
-                const auto& viewLine = projectedLines[wrapped];
-                for (std::size_t boundary = 0; boundary < viewLine.boundaryModelColumns.size(); ++boundary)
+            // Fragments and boundary columns are monotone in model coordinates.
+            // Find both with binary search instead of scanning every preceding
+            // UTF-16 boundary of a very long line on cursor/selection updates.
+            const auto first = std::lower_bound(projectedLines.begin(), projectedLines.end(),
+                normalized.column, [](const ViewLine& item, std::int32_t column)
                 {
-                    if (!viewLine.canonicalModelBoundaries[boundary] ||
-                        viewLine.boundaryModelColumns[boundary] != normalized.column)
+                    return item.endColumn < column;
+                });
+            for (auto candidate = first; candidate != projectedLines.end() &&
+                 candidate->startColumn <= normalized.column; ++candidate)
+            {
+                const auto wrapped = static_cast<std::size_t>(candidate - projectedLines.begin());
+                const auto viewLineNumber = range.first + static_cast<std::int32_t>(wrapped);
+                const auto& viewLine = *candidate;
+                const auto boundary = std::lower_bound(
+                    viewLine.boundaryModelColumns.begin(), viewLine.boundaryModelColumns.end(), normalized.column);
+                for (auto entry = boundary;
+                     entry != viewLine.boundaryModelColumns.end() && *entry == normalized.column; ++entry)
+                {
+                    const auto index = static_cast<std::size_t>(entry - viewLine.boundaryModelColumns.begin());
+                    if (!viewLine.canonicalModelBoundaries[index])
                     {
                         continue;
                     }
-
-                    if (boundary == viewLine.text.size() && wrapped + 1 < projectedLines.size())
+                    if (index == viewLine.text.size() && wrapped + 1 < projectedLines.size())
                     {
                         const auto& next = projectedLines[wrapped + 1];
                         if (!next.boundaryModelColumns.empty() && next.boundaryModelColumns.front() == normalized.column &&
@@ -497,7 +701,7 @@ namespace MonacoNative::Core
                             continue;
                         }
                     }
-                    return ViewPosition{viewLineNumber, static_cast<std::int32_t>(boundary + 1)};
+                    return ViewPosition{viewLineNumber, static_cast<std::int32_t>(index + 1)};
                 }
             }
         }
@@ -1128,6 +1332,10 @@ namespace MonacoNative::Core
         if (text.empty())
         {
             return {{0, 0}};
+        }
+        if (wrapWidth_ <= 0.0 && wrapColumn_ <= 0)
+        {
+            return {{0, text.size()}};
         }
 
         std::vector<std::size_t> boundaries{0};

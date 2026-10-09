@@ -6,6 +6,8 @@
 #include "MonacoNative/Core/UndoRedoService.h"
 
 #include <atomic>
+#include <random>
+#include <numeric>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -129,6 +131,39 @@ namespace
         MN_CHECK_THROWS((void)values.FindIndexByCumulativeOffset(6), std::out_of_range);
     }
 
+    void PrefixSumBulkRebuildIsEquivalentToSequentialUpdates()
+    {
+        std::mt19937 rng(9917);
+        SpliceablePrefixSum<std::int64_t> sequence;
+        for (const auto count : {0U, 1U, 15U, 1024U, 10000U})
+        {
+            std::vector<std::int64_t> values(count);
+            std::int64_t total = 0;
+            for (auto& value : values)
+            {
+                value = rng() % 8;
+                total += value;
+            }
+            sequence.Reset(values);
+            MN_CHECK_EQ(sequence.Values(), values);
+            MN_CHECK_EQ(sequence.Total(), total);
+            MN_CHECK_EQ(sequence.Size(), values.size());
+            for (int trial = 0; trial < 50; ++trial)
+            {
+                const auto prefixSize = count ? static_cast<std::size_t>(rng()) % (count + 1) : 0U;
+                const auto expectedPrefix = std::accumulate(values.begin(), values.begin() + prefixSize, std::int64_t{});
+                MN_CHECK_EQ(sequence.PrefixSum(prefixSize), expectedPrefix);
+                if (total > 0)
+                {
+                    const auto offset = static_cast<std::int64_t>(rng()) % total;
+                    const auto index = sequence.FindIndexByCumulativeOffset(offset);
+                    MN_CHECK(sequence.PrefixSum(index) <= offset);
+                    MN_CHECK(sequence.PrefixSum(index + 1) > offset);
+                }
+            }
+        }
+    }
+
     void DecorationCollectionBasics()
     {
         DecorationCollection decorations;
@@ -211,6 +246,7 @@ int main()
     suite.Run("event concurrent emit", EventSourceConcurrentEmit);
     suite.Run("undo/redo stack service", UndoRedoServiceStacks);
     suite.Run("spliceable prefix sum", SpliceablePrefixSumSupportsLocalSplices);
+    suite.Run("bulk prefix sum rebuild", PrefixSumBulkRebuildIsEquivalentToSequentialUpdates);
     suite.Run("decoration collection basics", DecorationCollectionBasics);
     suite.Run("decoration edge stickiness", DecorationStickinessAtEdges);
     suite.Run("decorations track delete/undo/redo", DecorationsTrackDeletionUndoRedo);

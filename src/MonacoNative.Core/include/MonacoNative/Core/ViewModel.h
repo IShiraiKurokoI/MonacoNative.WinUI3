@@ -28,6 +28,9 @@ namespace MonacoNative::Core
         std::vector<std::int32_t> boundaryModelColumns{};
         // True only for the canonical visual boundary of a real model position.
         std::vector<bool> canonicalModelBoundaries{};
+        // Width of the complete projected model line, cached on its first fragment.
+        // -1 means unknown. Valid until this model line or its measurer changes.
+        double fullProjectedWidth{-1.0};
     };
 
     struct ViewPosition final
@@ -86,6 +89,7 @@ namespace MonacoNative::Core
         std::uint64_t replacementViewLines{};
         std::uint64_t suffixViewLineMetadataRewrites{};
         std::uint64_t projectionSlotMoves{};
+        std::uint64_t reusedModelLines{};
     };
 
     class ViewModel final
@@ -180,6 +184,7 @@ namespace MonacoNative::Core
         [[nodiscard]] bool TryApplyIncrementalModelChanges(const ModelContentChangedEvent& event);
         [[nodiscard]] std::vector<LineChangeGroup> BuildLineChangeGroups(const ModelContentChangedEvent& event) const;
         void ApplyProjectionSplice(std::int32_t startLine, std::int32_t oldModelLineCount, std::int32_t newModelLineCount);
+        void ReflowWrappingChange(double previousWrapWidth, std::int32_t previousWrapColumn);
         void RefreshModelLine(std::int32_t modelLineNumber);
         void RefreshHiddenAreasIncrementally();
         void ReconcileVisibilityWithHiddenAreas();

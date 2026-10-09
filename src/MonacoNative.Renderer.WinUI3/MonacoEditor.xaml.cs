@@ -1118,15 +1118,45 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
             Math.Abs(_lastProjectionWrapWidth - wrapWidth) > 0.5 ||
             _lastProjectionLineHeight != _lineHeight)
         {
+            // Monaco keeps the top model position stable while the visual line
+            // mapping changes. Preserve that anchor across width/height reflow,
+            // instead of letting a preceding long line shift the viewport.
+            var oldScrollTop = ScrollHost.VerticalOffset;
+            var hasAnchor = oldScrollTop > VerticalPadding && _view.ViewLineCount > 0;
+            MonacoPosition anchor = default;
+            var inLineOffset = 0.0;
+            if (hasAnchor)
+            {
+                var oldViewLine = _view.GetViewLineAtVerticalOffset(oldScrollTop - VerticalPadding);
+                anchor = _view.ViewToModel(new MonacoViewPosition(oldViewLine, 1));
+                inLineOffset = Math.Max(0, oldScrollTop - VerticalPadding -
+                    _view.GetViewLineVerticalOffset(oldViewLine));
+            }
+
             _lastProjectionWrapWidth = wrapWidth;
             _lastProjectionLineHeight = _lineHeight;
             _view.SetLineHeight(_lineHeight);
             _view.SetWrapWidth(wrapWidth);
+            // View-line keys can change even when the total line count stays
+            // the same. Invalidate those layouts, but retain the independent
+            // text-width cache: DirectWrite measurements depend on text/font,
+            // NOT the viewport's wrapping width.
             _layoutCache?.Clear();
-            _measurer.Clear();
             _maxObservedLineWidth = 0;
+            UpdateExtent();
+            if (hasAnchor)
+            {
+                var newLine = _view.ModelToView(anchor).LineNumber;
+                var newScrollTop = Math.Max(0, _view.GetViewLineVerticalOffset(newLine) +
+                    Math.Min(inLineOffset, Math.Max(0, _lineHeight - 1)) + VerticalPadding);
+                if (Math.Abs(newScrollTop - oldScrollTop) > 0.5)
+                    ScrollHost.ChangeView(null, newScrollTop, null, true);
+            }
         }
-        UpdateExtent();
+        else
+        {
+            UpdateExtent();
+        }
         Render();
     }
 

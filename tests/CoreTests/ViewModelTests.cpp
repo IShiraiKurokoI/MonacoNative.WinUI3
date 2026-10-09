@@ -499,6 +499,187 @@ namespace
         MN_CHECK_EQ(view.GetViewLineAtVerticalOffset(44.0), line4);
     }
 
+    void WrapResizeReusesUnaffectedModelLines()
+    {
+        std::u16string text;
+        for (int i = 0; i < 400; ++i)
+        {
+            if (i != 0)
+            {
+                text += u'\n';
+            }
+            text += i == 199 ? std::u16string(500, u'X') : u"abcde";
+        }
+        auto model = std::make_shared<TextModel>(text);
+        ViewModel view(model);
+        auto measure = std::make_shared<CountingMeasurer>();
+        view.SetTextMeasurer(measure);
+        view.SetWrapWidth(80.0);
+        MN_CHECK(view.ViewLineCount() > 400);
+
+        measure->calls = 0;
+        view.SetWrapWidth(100.0);
+        const auto stats = view.LastProjectionUpdateStats();
+        MN_CHECK(stats.reusedModelLines >= 399U);
+        MN_CHECK(stats.replacementModelLines <= 1U);
+        MN_CHECK_EQ(stats.suffixViewLineMetadataRewrites, 0U);
+        MN_CHECK(measure->calls < 70U);
+
+        measure->calls = 0;
+        view.SetWrapWidth(50.0);
+        MN_CHECK(view.LastProjectionUpdateStats().reusedModelLines >= 399U);
+        MN_CHECK(measure->calls < 150U);
+        MN_CHECK_EQ(view.GetViewLine(200).modelLineNumber, 200);
+        MN_CHECK_EQ(view.GetViewLine(view.ViewLineCount()).modelLineNumber, 400);
+        MN_CHECK_EQ(view.ConvertViewPositionToModelPosition(view.ConvertModelPositionToViewPosition(Position{200, 415})),
+            (Position{200, 415}));
+    }
+
+    void ResizeReflowMatchesFullRebuild()
+    {
+        std::u16string text;
+        for (int i = 0; i < 70; ++i)
+        {
+            if (i)
+            {
+                text += u'\n';
+            }
+            text += i == 4 ? u"A\U0001F600B\u0301Z" : (i % 3 == 0 ? u"abcdefghijklm" : u"small");
+        }
+        auto model = std::make_shared<TextModel>(text);
+        ViewModel incremental(model);
+        ViewModel oracle(model);
+        incremental.SetTextMeasurer(std::make_shared<ProportionalMeasurer>());
+        oracle.SetTextMeasurer(std::make_shared<ProportionalMeasurer>());
+        incremental.SetLineHeight(14.0);
+        oracle.SetLineHeight(14.0);
+        incremental.SetHiddenAreas({HiddenArea{30, 34}});
+        oracle.SetHiddenAreas({HiddenArea{30, 34}});
+        const auto injected1 = incremental.AddInjectedText(Position{7, 3}, u"<H>");
+        const auto injected2 = oracle.AddInjectedText(Position{7, 3}, u"<H>");
+        const auto zone1 = incremental.AddViewZone(8, 5.0);
+        const auto zone2 = oracle.AddViewZone(8, 5.0);
+        MN_CHECK(injected1 != 0 && injected2 != 0 && zone1 != 0 && zone2 != 0);
+
+        for (const auto width : {0.0, 9.0, 14.0, 7.0, 2.0, 16.0, 80.0, 4.0, 0.0})
+        {
+            incremental.SetWrapWidth(width);
+            oracle.SetWrapWidth(width);
+            oracle.Rebuild(); // Deliberately use the older complete projection path as truth.
+            MN_CHECK_EQ(incremental.ViewLineCount(), oracle.ViewLineCount());
+            MN_CHECK_EQ(incremental.TotalHeight(), oracle.TotalHeight());
+            for (int i = 1; i <= incremental.ViewLineCount(); ++i)
+            {
+                const auto& actual = incremental.GetViewLine(i);
+                const auto& expected = oracle.GetViewLine(i);
+                MN_CHECK_EQ(actual.modelLineNumber, expected.modelLineNumber);
+                MN_CHECK_EQ(actual.text, expected.text);
+                MN_CHECK_EQ(actual.startColumn, expected.startColumn);
+                MN_CHECK_EQ(actual.endColumn, expected.endColumn);
+                MN_CHECK_EQ(actual.wrappedIndex, expected.wrappedIndex);
+                MN_CHECK_EQ(actual.boundaryModelColumns, expected.boundaryModelColumns);
+                MN_CHECK_EQ(actual.canonicalModelBoundaries, expected.canonicalModelBoundaries);
+                MN_CHECK_EQ(incremental.GetVerticalOffsetForViewLine(i), oracle.GetVerticalOffsetForViewLine(i));
+            }
+            for (int i = 1; i <= static_cast<int>(model->GetLineCount()); ++i)
+            {
+                for (const auto column : {1, model->GetLineMaxColumn(i)})
+                {
+                    const Position position{i, column};
+                    MN_CHECK_EQ(incremental.ConvertModelPositionToViewPosition(position),
+                        oracle.ConvertModelPositionToViewPosition(position));
+                }
+            }
+            const auto maxHeight = incremental.TotalHeight();
+            for (const auto fraction : {0.0, 0.1, 0.49, 0.99})
+            {
+                MN_CHECK_EQ(incremental.GetViewLineAtVerticalOffset(maxHeight * fraction),
+                    oracle.GetViewLineAtVerticalOffset(maxHeight * fraction));
+            }
+        }
+        // Column wrapping still works after the measured mode is disabled.
+        for (const auto columns : {3, 5, 20, 0})
+        {
+            incremental.SetWrapColumn(columns);
+            oracle.SetWrapColumn(columns);
+            oracle.Rebuild();
+            MN_CHECK_EQ(incremental.ViewLineCount(), oracle.ViewLineCount());
+            for (int i = 1; i <= incremental.ViewLineCount(); ++i)
+            {
+                MN_CHECK_EQ(incremental.GetViewLine(i).text, oracle.GetViewLine(i).text);
+                MN_CHECK_EQ(incremental.GetViewLine(i).modelLineNumber, oracle.GetViewLine(i).modelLineNumber);
+            }
+        }
+    }
+
+    void EditsAndResizesPreserveProjectionParity()
+    {
+        auto model = std::make_shared<TextModel>(
+            u"header\nabcdefghijklmnopqrstuvwxyz\nshort\n\U0001F600 + unicode\nfooter");
+        ViewModel view(model);
+        ViewModel reference(model);
+        view.SetTextMeasurer(std::make_shared<ProportionalMeasurer>());
+        reference.SetTextMeasurer(std::make_shared<ProportionalMeasurer>());
+        std::mt19937 rng(712361);
+        for (int step = 0; step < 65; ++step)
+        {
+            if (step % 4 == 0)
+            {
+                const auto width = (step % 12 == 0) ? 0.0 : static_cast<double>(2 + rng() % 25);
+                view.SetWrapWidth(width);
+                reference.SetWrapWidth(width);
+            }
+            else if (step % 11 == 0 && model->CanUndo())
+            {
+                MN_CHECK(model->Undo());
+            }
+            else
+            {
+                const auto line = 1 + static_cast<std::int32_t>(rng() % model->GetLineCount());
+                const auto column = 1 + static_cast<std::int32_t>(rng() % model->GetLineMaxColumn(line));
+                const auto offset = model->GetOffsetAt(Position{line, column});
+                const auto inserted = (step % 6 == 0) ? u"\nXX" :
+                    ((step % 7 == 0) ? u"\U0001F600" : u"a");
+                model->ApplyOffsetEdits({OffsetEdit{offset, offset, inserted}});
+            }
+            reference.Rebuild();
+            MN_CHECK_EQ(view.ViewLineCount(), reference.ViewLineCount());
+            MN_CHECK_EQ(view.TotalHeight(), reference.TotalHeight());
+            for (int row = 1; row <= view.ViewLineCount(); ++row)
+            {
+                const auto& actual = view.GetViewLine(row);
+                const auto& expected = reference.GetViewLine(row);
+                MN_CHECK_EQ(actual.text, expected.text);
+                MN_CHECK_EQ(actual.modelLineNumber, expected.modelLineNumber);
+                MN_CHECK_EQ(actual.boundaryModelColumns, expected.boundaryModelColumns);
+                MN_CHECK_EQ(view.GetVerticalOffsetForViewLine(row), reference.GetVerticalOffsetForViewLine(row));
+            }
+        }
+    }
+
+    void LineHeightChangesDoNotRewrapText()
+    {
+        auto model = std::make_shared<TextModel>(u"abcdefghij\ntiny\nlast");
+        ViewModel view(model);
+        auto measure = std::make_shared<CountingMeasurer>();
+        view.SetTextMeasurer(measure);
+        view.SetWrapWidth(3.0);
+        view.SetLineHeight(10.0);
+        const auto zone = view.AddViewZone(1, 7.0);
+        MN_CHECK(zone != 0);
+        const auto before = view.ViewLineCount();
+        measure->calls = 0;
+        view.SetLineHeight(21.0);
+        MN_CHECK_EQ(measure->calls, 0U);
+        MN_CHECK_EQ(view.LastProjectionUpdateStats().replacementModelLines, 0U);
+        MN_CHECK_EQ(view.LastProjectionUpdateStats().reusedModelLines, model->GetLineCount());
+        MN_CHECK_EQ(view.ViewLineCount(), before);
+        MN_CHECK_EQ(view.GetVerticalOffsetForViewLine(5), 4 * 21.0 + 7.0);
+        MN_CHECK_EQ(view.TotalHeight(), static_cast<double>(before) * 21.0 + 7.0);
+        view.Rebuild();
+        MN_CHECK_EQ(view.TotalHeight(), static_cast<double>(before) * 21.0 + 7.0);
+    }
+
     void HiddenZoneAnchorsDoNotCreateGaps()
     {
         auto model = std::make_shared<TextModel>(u"a\nb\nc");
@@ -531,6 +712,10 @@ int main()
     suite.Run("structural fold/injected/zone projection", StructuralEditsPreserveZonesFoldingAndInjectedText);
     suite.Run("randomized projection splices", RandomizedProjectionRoundTripsAfterSplices);
     suite.Run("vertical prefix metadata splices", VerticalPrefixMetadataTracksStructuralSplices);
+    suite.Run("wrap resize preserves unaffected projections", WrapResizeReusesUnaffectedModelLines);
+    suite.Run("incremental resize matches full rebuild", ResizeReflowMatchesFullRebuild);
+    suite.Run("line-height changes skip text shaping", LineHeightChangesDoNotRewrapText);
+    suite.Run("mixed edits and width changes match rebuild", EditsAndResizesPreserveProjectionParity);
     suite.Run("grapheme-safe wrapping", WrappingDoesNotSplitCommonGraphemeClusters);
     suite.Run("injected text with measured wrapping", InjectedTextSurvivesMeasuredWrapping);
     suite.Run("injected text projection", InjectedTextProjectsAndMapsWithoutChangingModel);

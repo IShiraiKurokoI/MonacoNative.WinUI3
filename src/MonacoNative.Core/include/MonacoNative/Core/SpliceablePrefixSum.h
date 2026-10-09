@@ -29,10 +29,42 @@ namespace MonacoNative::Core
         {
             root_.reset();
             nextSerial_ = 1;
+            // Linear-time Cartesian-tree build for the monotonically assigned
+            // node priorities. Repeated Merge would be O(n log n) and runs on
+            // every wrapping-width change for a multi-line document.
+            std::vector<Node*> rightSpine;
+            rightSpine.reserve(values.size());
             for (const auto& value : values)
             {
-                root_ = Merge(std::move(root_), MakeNode(value));
+                auto node = MakeNode(value);
+                auto* raw = node.get();
+                while (!rightSpine.empty() && rightSpine.back()->priority < raw->priority)
+                {
+                    rightSpine.pop_back();
+                }
+                if (rightSpine.empty())
+                {
+                    node->left = std::move(root_);
+                    root_ = std::move(node);
+                }
+                else
+                {
+                    node->left = std::move(rightSpine.back()->right);
+                    rightSpine.back()->right = std::move(node);
+                }
+                rightSpine.push_back(raw);
             }
+            Recompute(root_.get());
+        }
+
+        // Obtain all model-line counts/heights in O(n), without n separate
+        // O(log n) tree traversals. Used to bulk reindex incremental reflow.
+        [[nodiscard]] std::vector<T> Values() const
+        {
+            std::vector<T> result;
+            result.reserve(Size());
+            AppendValues(root_.get(), result);
+            return result;
         }
 
         [[nodiscard]] std::size_t Size() const noexcept
@@ -173,6 +205,28 @@ namespace MonacoNative::Core
         {
             node.size = NodeSize(node.left) + 1 + NodeSize(node.right);
             node.sum = NodeSum(node.left) + node.value + NodeSum(node.right);
+        }
+
+        static void Recompute(Node* node) noexcept
+        {
+            if (!node)
+            {
+                return;
+            }
+            Recompute(node->left.get());
+            Recompute(node->right.get());
+            Refresh(*node);
+        }
+
+        static void AppendValues(const Node* node, std::vector<T>& output)
+        {
+            if (!node)
+            {
+                return;
+            }
+            AppendValues(node->left.get(), output);
+            output.push_back(node->value);
+            AppendValues(node->right.get(), output);
         }
 
         [[nodiscard]] std::unique_ptr<Node> MakeNode(T value)
