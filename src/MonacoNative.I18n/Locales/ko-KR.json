@@ -39,7 +39,7 @@
   "monacoNative.sample.theme.system": "시스템 따르기",
   "monacoNative.sample.theme.light": "라이트",
   "monacoNative.sample.theme.dark": "다크",
-  "monacoNative.sample.status": "네이티브 코어 · v{0} · {1}줄 · UTF-16 {2}단위 · IME {3} · 입력 {4} · 백엔드 {5}",
+  "monacoNative.sample.status": "{0}줄 · UTF-16 단위 {1}개 · {2}자 · 입력 언어 {3}",
   "monacoNative.sample.backend.nativeTsf": "네이티브 TSF",
   "monacoNative.sample.input.none": "없음",
   "monacoNative.sample.windowTitle": "MonacoNative - C# WinUI 호스트",

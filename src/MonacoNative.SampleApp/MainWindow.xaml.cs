@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Automation;
 using MonacoNative.Input;
 using MonacoNative.Renderer.WinUI3;
+using MonacoNative.Core;
 
 namespace MonacoNative.SampleApp;
 
@@ -19,6 +20,8 @@ public sealed partial class MainWindow : Window
     private bool _refreshingThemeOptions;
     private bool _updatingFeatureToggles;
     private bool _updatingMenuOptions;
+    private ulong _countedCharactersVersion = ulong.MaxValue;
+    private long _countedCharacters;
 
     private sealed record SampleAsset(string Name, string FileName, string LanguageId)
     {
@@ -365,23 +368,24 @@ public sealed partial class MainWindow : Window
 
     private void UpdateStatus()
     {
-        var imeKey = Editor.ImeCapability == ImeInputCapability.NativeTsf
-            ? "monacoNative.sample.ime.nativeTsf"
-            : "monacoNative.sample.ime.basicFallback";
-        var ime = Editor.GetLocalizedString(imeKey);
         var input = string.IsNullOrWhiteSpace(Editor.InputLanguageTag)
             ? Editor.GetLocalizedString("monacoNative.sample.input.none")
             : Editor.InputLanguageTag;
-        const string backendKey = "monacoNative.sample.backend.nativeTsf";
+        // A Unicode scalar (including one non-BMP emoji) counts as one character,
+        // whereas UTF-16 Length counts its two code units. Avoid recounting on
+        // focus, cursor, theme, language and other non-text status updates.
+        if (_countedCharactersVersion != Editor.VersionId)
+        {
+            _countedCharacters = MonacoTextStatistics.CountCharacters(Editor.Text);
+            _countedCharactersVersion = Editor.VersionId;
+        }
         StatusText.Text = string.Format(
             CultureInfo.CurrentCulture,
             Editor.GetLocalizedString("monacoNative.sample.status"),
-            Editor.VersionId,
             Editor.LineCount,
             Editor.Length,
-            ime,
-            input,
-            Editor.GetLocalizedString(backendKey));
+            _countedCharacters,
+            input);
         // Stable, nonlocalized accessibility telemetry for end-to-end UI test assertions.
         // Does not expose source text or modify the editor's UIA Text provider.
         AutomationProperties.SetName(StatusText,

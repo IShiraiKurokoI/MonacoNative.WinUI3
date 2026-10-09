@@ -56,6 +56,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
     private Color _foregroundColor = Color.FromArgb(255, 212, 212, 212);
     private Color _gutterColor = Color.FromArgb(255, 133, 133, 133);
     private Color _selectionColor = Color.FromArgb(255, 38, 79, 120);
+    private Color _wordHighlightColor = Color.FromArgb(66, 173, 214, 255);
     private Color _findMatchColor = Color.FromArgb(205, 158, 106, 3);
     private Color _currentLineColor = Color.FromArgb(55, 255, 255, 255);
     private Color _caretColor = Color.FromArgb(255, 255, 255, 255);
@@ -135,6 +136,17 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
     private MonacoPosition _anchor = new(1, 1);
     private MonacoPosition _active = new(1, 1);
     private bool _dragSelecting;
+    private bool _dragSelectingByWord;
+    private MonacoRange? _initialWordSelection;
+    private long _lastPrimaryClickTicks;
+    private uint _lastPrimaryClickPointerId;
+    private Windows.Foundation.Point _lastPrimaryClickPoint;
+    private string _highlightedWord = string.Empty;
+    private IReadOnlyList<MonacoRange> _visibleWordMatches = Array.Empty<MonacoRange>();
+    private string _visibleWordQuery = string.Empty;
+    private ulong _visibleWordVersion;
+    private int _visibleWordFirstModelLine;
+    private int _visibleWordLastModelLine;
     private bool _caretVisible = true;
     private bool _loaded;
     private bool _wordWrap = true;
@@ -526,6 +538,9 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
     private void Model_Changed(object? sender, MonacoModelChangedEventArgs e)
     {
         using var methodSample = _methodProfiler.Measure("Model_Changed");
+        // A word from a previous revision may no longer exist at the same offsets.
+        _highlightedWord = string.Empty;
+        InvalidateWordHighlights();
         if (e.IsFullInvalidation)
         {
             _languageTokens.Clear();
@@ -707,6 +722,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
             _foregroundColor = foreground;
             _gutterColor = foreground;
             _selectionColor = Color.FromArgb(185, accent.R, accent.G, accent.B);
+            _wordHighlightColor = Color.FromArgb(100, accent.R, accent.G, accent.B);
             _findMatchColor = Color.FromArgb(200, accent.R, accent.G, accent.B);
             _currentLineColor = Color.FromArgb(40, foreground.R, foreground.G, foreground.B);
             _caretColor = foreground;
@@ -735,6 +751,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
             _foregroundColor = Color.FromArgb(255, 59, 59, 59);    // Modern Light editor.foreground #3B3B3B
             _gutterColor = Color.FromArgb(255, 110, 118, 129);
             _selectionColor = Color.FromArgb(255, 173, 214, 255); // VS Code active selection #ADD6FF
+            _wordHighlightColor = Color.FromArgb(105, 173, 214, 255); // editor.selectionHighlightBackground
             _findMatchColor = Color.FromArgb(180, 168, 172, 148);
             _currentLineColor = Color.FromArgb(255, 247, 247, 247);
             _caretColor = Color.FromArgb(255, 17, 17, 17);
@@ -763,6 +780,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
             _foregroundColor = Color.FromArgb(255, 204, 204, 204);
             _gutterColor = Color.FromArgb(255, 110, 118, 129);
             _selectionColor = Color.FromArgb(255, 38, 79, 120); // VS Code active selection #264F78
+            _wordHighlightColor = Color.FromArgb(53, 173, 214, 255);
             _findMatchColor = Color.FromArgb(205, 158, 106, 3); // Modern Dark editor.findMatchBackground #9E6A03
             _currentLineColor = Color.FromArgb(255, 43, 43, 43);
             _caretColor = Color.FromArgb(255, 255, 255, 255);
@@ -1668,6 +1686,40 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
         using var methodSample = _methodProfiler.Measure("DrawSelection");
         if (_layoutCache is null)
             return;
+        // Monaco/VS Code selection occurrences are a separate translucent layer.
+        // Query only the model lines visible in this viewport; do not scan the
+        // whole document or cap matches globally as the user scrolls.
+        if (_highlightedWord.Length != 0 && first <= last)
+        {
+            var firstModel = _view.GetViewLine(first).ModelLineNumber;
+            var lastModel = _view.GetViewLine(last).ModelLineNumber;
+            if (_visibleWordVersion != _model.VersionId ||
+                !string.Equals(_visibleWordQuery, _highlightedWord, StringComparison.Ordinal) ||
+                _visibleWordFirstModelLine != firstModel || _visibleWordLastModelLine != lastModel)
+            {
+                _visibleWordMatches = _model.FindMatchesInLines(_highlightedWord,
+                    firstModel, lastModel, matchCase: true, wholeWord: true, limit: 2_000);
+                _visibleWordVersion = _model.VersionId;
+                _visibleWordQuery = _highlightedWord;
+                _visibleWordFirstModelLine = firstModel;
+                _visibleWordLastModelLine = lastModel;
+            }
+            foreach (var match in _visibleWordMatches)
+            {
+                // Do not paint over the primary selection. It has its own color.
+                var start = new MonacoPosition(match.StartLineNumber, match.StartColumn);
+                var end = new MonacoPosition(match.EndLineNumber, match.EndColumn);
+                if ((start == _anchor && end == _active) || (start == _active && end == _anchor))
+                    continue;
+                // A model line concealed by folding can map onto the nearest
+                // visible view line. Never paint its word highlights there.
+                var viewAtStart = _view.ModelToView(start);
+                if (viewAtStart.LineNumber < first || viewAtStart.LineNumber > last ||
+                    _view.GetViewLine(viewAtStart.LineNumber).ModelLineNumber != match.StartLineNumber)
+                    continue;
+                DrawSelectionRange(ds, start, end, first, last, scrollTop, scrollLeft, _wordHighlightColor);
+            }
+        }
         // Search highlights are painted only for visible matches and only while Find is open.
         // Binary-search into the sorted match array to avoid O(document matches) scrolling.
         if (IsFindOpen && _findMatches.Count > 0 && first <= last)
@@ -2027,6 +2079,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
 
         if (pointerPoint.Properties.IsRightButtonPressed)
         {
+            _lastPrimaryClickTicks = 0;
             var contextPosition = HitTest(point.X, point.Y);
             var offset = _model.GetOffsetAt(contextPosition);
             var (selectionStart, selectionEnd) = OrderedSelectionOffsets();
@@ -2055,11 +2108,46 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
         }
         if (_showMinimap && point.X >= MinimapLeft)
         {
+            _lastPrimaryClickTicks = 0;
             var ratio = ActualHeight <= 0 ? 0 : Math.Clamp(point.Y / ActualHeight, 0, 1);
             var target = Math.Clamp((ratio * _view.TotalHeight) - (ActualHeight / 2), 0, ScrollHost.ScrollableHeight);
             ScrollHost.ChangeView(null, target, null, true);
             e.Handled = true;
             return;
+        }
+        // WinUI's DoubleTapped gesture may be suppressed by a handled PointerPressed
+        // (required for the swap-chain editor's capture). Detect the second primary
+        // press ourselves, before a normal click collapses the first selection.
+        var now = Stopwatch.GetTimestamp();
+        var doubleClick = e.Pointer.PointerDeviceType == Microsoft.UI.Input.PointerDeviceType.Mouse &&
+            _lastPrimaryClickTicks != 0 &&
+            now - _lastPrimaryClickTicks <= Stopwatch.Frequency / 2 &&
+            _lastPrimaryClickPointerId == e.Pointer.PointerId &&
+            Math.Abs(point.X - _lastPrimaryClickPoint.X) <= 6 &&
+            Math.Abs(point.Y - _lastPrimaryClickPoint.Y) <= 6;
+        _lastPrimaryClickTicks = doubleClick ? 0 : now;
+        _lastPrimaryClickPointerId = e.Pointer.PointerId;
+        _lastPrimaryClickPoint = point;
+        if (doubleClick && !IsKeyDown(VirtualKey.Menu))
+        {
+            var word = _model.GetWordRangeAt(HitTest(point.X, point.Y, selectCharacter: true));
+            if (word is { } range)
+            {
+                ClearSecondarySelections();
+                _anchor = new MonacoPosition(range.StartLineNumber, range.StartColumn);
+                _active = new MonacoPosition(range.EndLineNumber, range.EndColumn);
+                _initialWordSelection = range;
+                _dragSelecting = true;
+                _dragSelectingByWord = true;
+                SurfaceRoot.CapturePointer(e.Pointer);
+                SetMouseCursor(EditorPointerCursorKind.Text);
+                _preferredCaretX = null;
+                // Resolve only once for this double-click, never per drag-move.
+                UpdateSelectedWordHighlight();
+                OnSelectionChanged();
+                e.Handled = true;
+                return;
+            }
         }
         var position = HitTest(point.X, point.Y);
         if (IsKeyDown(VirtualKey.Menu))
@@ -2070,6 +2158,8 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
         }
         ClearSecondarySelections();
         _dragSelecting = true;
+        _dragSelectingByWord = false;
+        _initialWordSelection = null;
         SetMouseCursor(EditorPointerCursorKind.Text);
         SurfaceRoot.CapturePointer(e.Pointer);
         _anchor = _active = position;
@@ -2161,6 +2251,27 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
             return;
         var point = e.GetCurrentPoint(SurfaceRoot).Position;
         var position = HitTest(point.X, point.Y);
+        if (_dragSelectingByWord && _initialWordSelection is { } initial)
+        {
+            var first = new MonacoPosition(initial.StartLineNumber, initial.StartColumn);
+            var last = new MonacoPosition(initial.EndLineNumber, initial.EndColumn);
+            var offset = _model.GetOffsetAt(position);
+            var firstOffset = _model.GetOffsetAt(first);
+            var lastOffset = _model.GetOffsetAt(last);
+            // Preserve the entire initial word until the pointer leaves it.
+            // Extending outward never truncates the originally selected word.
+            var newAnchor = offset < firstOffset ? last : first;
+            var newActive = offset < firstOffset ? position : offset > lastOffset ? position : last;
+            if (newAnchor != _anchor || newActive != _active)
+            {
+                _anchor = newAnchor;
+                _active = newActive;
+                _preferredCaretX = null;
+                OnSelectionChanged();
+            }
+            e.Handled = true;
+            return;
+        }
         if (position != _active) // Avoid rerendering on a move inside the same caret column.
         {
             _active = position;
@@ -2174,9 +2285,12 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
     {
         var wasSelecting = _dragSelecting;
         _dragSelecting = false;
+        _dragSelectingByWord = false;
+        _initialWordSelection = null;
         ClearDragHitTestCache();
         if (wasSelecting && !_disposed)
         {
+            if (UpdateSelectedWordHighlight()) Render(RenderDirty.Selection);
             FinishDragSelectionNotifications();
             OnContributionsSelectionChanged();
         }
@@ -2192,15 +2306,18 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
         if (!_dragSelecting)
             return;
         _dragSelecting = false;
+        _dragSelectingByWord = false;
+        _initialWordSelection = null;
         ClearDragHitTestCache();
         SurfaceRoot.ReleasePointerCapture(e.Pointer);
+        if (UpdateSelectedWordHighlight()) Render(RenderDirty.Selection);
         FinishDragSelectionNotifications();
         OnContributionsSelectionChanged();
         UpdateMouseCursor(e);
         e.Handled = true;
     }
 
-    private MonacoPosition HitTest(double x, double y)
+    private MonacoPosition HitTest(double x, double y, bool selectCharacter = false)
     {
         using var methodSample = _methodProfiler.Measure("HitTest");
         if (_layoutCache is null)
@@ -2233,7 +2350,20 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
             _dragHitText = text;
         }
         var localX = Math.Max(0, ScrollHost.HorizontalOffset + x - GutterWidth - LeftPadding);
-        var column = NearestCaretColumn(layout, text, (float)localX);
+        int column;
+        if (selectCharacter && text.Length > 0)
+        {
+            // Double click is on the character beneath the mouse, not on the
+            // nearest caret side (which might fall on a following punctuation).
+            var insideText = layout.HitTest((float)localX, 0, out var region, out _);
+            // A double-click in the empty area to the right of a line must not
+            // select its final identifier just because hit-testing clamps to it.
+            column = insideText
+                ? Math.Clamp(region.CharacterIndex + 1, 1, text.Length)
+                : text.Length + 1;
+        }
+        else
+            column = NearestCaretColumn(layout, text, (float)localX);
         return _view.ViewToModel(new MonacoViewPosition(lineNumber, column));
     }
 
@@ -3329,6 +3459,17 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
     private void OnSelectionChanged()
     {
         using var methodSample = _methodProfiler.Measure("OnSelectionChanged");
+        // Do not copy long selected ranges / do word queries on each drag move.
+        if (!_dragSelecting)
+            UpdateSelectedWordHighlight();
+        else if (_highlightedWord.Length != 0 &&
+            (!_dragSelectingByWord || _initialWordSelection is not { } wordRange ||
+             _anchor != new MonacoPosition(wordRange.StartLineNumber, wordRange.StartColumn) ||
+             _active != new MonacoPosition(wordRange.EndLineNumber, wordRange.EndColumn)))
+        {
+            _highlightedWord = string.Empty;
+            InvalidateWordHighlights();
+        }
         UpdateCommandContext();
         ResetCaretBlink();
         RevealCaret();
@@ -3349,6 +3490,33 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
             _textInput?.NotifyLayoutChanged();
         }
         Render(RenderDirty.Selection | RenderDirty.Brackets | RenderDirty.Overview | RenderDirty.Caret);
+    }
+
+    private void InvalidateWordHighlights()
+    {
+        _visibleWordMatches = Array.Empty<MonacoRange>();
+        _visibleWordQuery = string.Empty;
+        _visibleWordFirstModelLine = 0;
+        _visibleWordLastModelLine = 0;
+        _visibleWordVersion = 0;
+    }
+
+    private bool UpdateSelectedWordHighlight()
+    {
+        var word = string.Empty;
+        if (_secondarySelections.Count == 0 && _anchor.LineNumber == _active.LineNumber && _anchor != _active)
+        {
+            var startColumn = Math.Min(_anchor.Column, _active.Column);
+            var endColumn = Math.Max(_anchor.Column, _active.Column);
+            var start = new MonacoPosition(_anchor.LineNumber, startColumn);
+            var range = _model.GetWordRangeAt(start);
+            if (range is { } match && match.StartColumn == startColumn && match.EndColumn == endColumn)
+                word = _model.GetValueInRange(match);
+        }
+        if (string.Equals(word, _highlightedWord, StringComparison.Ordinal)) return false;
+        _highlightedWord = word;
+        InvalidateWordHighlights();
+        return true;
     }
 
     private void QueueDragSelectionNotifications()

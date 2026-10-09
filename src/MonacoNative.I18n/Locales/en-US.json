@@ -39,7 +39,7 @@
   "monacoNative.sample.theme.system": "Follow system",
   "monacoNative.sample.theme.light": "Light",
   "monacoNative.sample.theme.dark": "Dark",
-  "monacoNative.sample.status": "Native core · v{0} · {1} lines · {2} UTF-16 units · IME {3} · input {4} · backend {5}",
+  "monacoNative.sample.status": "{0} lines · {1} UTF-16 units · {2} characters · input language {3}",
   "monacoNative.sample.backend.nativeTsf": "Native TSF",
   "monacoNative.sample.input.none": "none",
   "monacoNative.sample.windowTitle": "MonacoNative - C# WinUI Host",

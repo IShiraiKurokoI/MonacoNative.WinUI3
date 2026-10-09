@@ -39,7 +39,7 @@
   "monacoNative.sample.theme.system": "跟随系统",
   "monacoNative.sample.theme.light": "浅色",
   "monacoNative.sample.theme.dark": "深色",
-  "monacoNative.sample.status": "原生核心 · v{0} · {1} 行 · {2} 个 UTF-16 单元 · 输入法 {3} · 输入语言 {4} · 后端 {5}",
+  "monacoNative.sample.status": "{0} 行 · {1} 个 UTF-16 单元 · {2} 字 · 输入语言 {3}",
   "monacoNative.sample.backend.nativeTsf": "原生 TSF",
   "monacoNative.sample.input.none": "无",
   "monacoNative.sample.windowTitle": "MonacoNative - C# WinUI 宿主",

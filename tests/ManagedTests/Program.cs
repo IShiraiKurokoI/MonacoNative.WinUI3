@@ -47,6 +47,16 @@ internal static class Program
             Equal(new MonacoTextChange(2, 2, "😀"), MonacoTextChangeCalculator.Compute("ab", "ab😀"));
         });
 
+        Run("status statistics distinguish UTF-16 units from Unicode characters", () =>
+        {
+            Equal(0L, MonacoTextStatistics.CountCharacters(null));
+            Equal(0L, MonacoTextStatistics.CountCharacters(""));
+            Equal(5L, MonacoTextStatistics.CountCharacters("hello"));
+            Equal(3L, MonacoTextStatistics.CountCharacters("A😀B"));
+            Equal(4, "A😀B".Length);
+            Equal(5L, MonacoTextStatistics.CountCharacters("a\r\nb😀"));
+        });
+
         Run("construction and basic properties", () =>
         {
             using var model = new MonacoTextModel("alpha\r\nbeta", "cpp");
@@ -78,6 +88,18 @@ internal static class Program
             Equal("Alpha alpha alphabet ALPHA", model.Text);
             True(model.Redo(), "Redo failed.");
             Equal("X X alphabet ALPHA", model.Text);
+        });
+
+        Run("native word boundaries and viewport occurrence highlights", () =>
+        {
+            using var model = new MonacoTextModel("code code_tail code\n变量，变量 😀 cafe\u0301", "cpp");
+            Equal(new MonacoRange(1, 1, 1, 5), model.GetWordRangeAt(new MonacoPosition(1, 3)));
+            Equal(null, model.GetWordRangeAt(new MonacoPosition(2, 3)));
+            Equal(null, model.GetWordRangeAt(new MonacoPosition(2, 7)));
+            Equal(2, model.FindMatchesInLines("code", 1, 1).Count);
+            Equal(0, model.FindMatchesInLines("code", 2, 2).Count);
+            Equal(2, model.FindMatchesInLines("变量", 2, 2).Count);
+            Equal(1, model.FindMatchesInLines("code", 1, 1, limit: 1).Count);
         });
 
         Run("undo/redo restores exact caret positions across multiple lines", () =>

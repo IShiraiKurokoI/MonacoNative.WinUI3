@@ -1,7 +1,7 @@
 # Native ABI contract
 
-MonacoNative ships **one supported native C ABI: 1.3.0** (packed version
-`0x00010300`). This is a project-defined interface, not a Windows App SDK,
+MonacoNative ships **one supported native C ABI: 1.4.0** (packed version
+`0x00010400`). This is a project-defined interface, not a Windows App SDK,
 WinUI, or C++/WinRT version. No alternate older ABI implementation or
 version-specific binding is built or distributed.
 
@@ -9,7 +9,7 @@ version-specific binding is built or distributed.
 
 - [`reference/native-abi.json`](../reference/native-abi.json) is the one checked-in
   contract for the exported symbol list, version, supported architectures, and
-  64-bit structure sizes. It currently lists **91 exports**.
+  64-bit structure sizes. It currently lists **93 exports**.
 - [`MonacoNative.Core.Native.h`](../src/MonacoNative.Core.Native/MonacoNative.Core.Native.h)
   defines the corresponding native declarations, data layouts, and calling
   conventions. [`MonacoNativeAbi.cs`](../src/MonacoNative.Core.Managed/MonacoNativeAbi.cs)
@@ -25,7 +25,7 @@ version-specific binding is built or distributed.
 
 ## Changing the interface
 
-1. Keep implementation-only changes at **1.3.0**; do not bump ABI for CI,
+1. Keep implementation-only changes at **1.4.0**; do not bump ABI for CI,
    packaging, or implementation fixes that leave its binary contract intact.
 2. When the binary contract does change, intentionally choose the new version
    (additive changes normally increment minor; incompatible changes increment

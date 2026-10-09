@@ -39,7 +39,7 @@
   "monacoNative.sample.theme.system": "システムに従う",
   "monacoNative.sample.theme.light": "ライト",
   "monacoNative.sample.theme.dark": "ダーク",
-  "monacoNative.sample.status": "ネイティブ コア · v{0} · {1} 行 · UTF-16 {2} 単位 · IME {3} · 入力 {4} · バックエンド {5}",
+  "monacoNative.sample.status": "{0} 行 · UTF-16 {1} 単位 · {2} 文字 · 入力言語 {3}",
   "monacoNative.sample.backend.nativeTsf": "ネイティブ TSF",
   "monacoNative.sample.input.none": "なし",
   "monacoNative.sample.windowTitle": "MonacoNative - C# WinUI ホスト",

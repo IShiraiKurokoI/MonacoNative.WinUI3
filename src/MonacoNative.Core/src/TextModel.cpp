@@ -1,7 +1,7 @@
 #include "MonacoNative/Core/TextModel.h"
+#include "UnicodeWordCharacters.h"
 
 #include <algorithm>
-#include <cctype>
 #include <cstddef>
 #include <limits>
 #include <stdexcept>
@@ -11,14 +11,29 @@ namespace MonacoNative::Core
 {
     namespace
     {
-        bool IsWordCharacter(char16_t value) noexcept
+        bool IsHighSurrogate(char16_t value) noexcept { return value >= 0xD800 && value <= 0xDBFF; }
+        bool IsLowSurrogate(char16_t value) noexcept { return value >= 0xDC00 && value <= 0xDFFF; }
+
+        bool IsWordAt(std::u16string_view text, std::size_t index) noexcept
         {
-            if (value >= 0x80)
+            if (index >= text.size()) return false;
+            auto start = index;
+            if (IsLowSurrogate(text[start]) && start > 0 && IsHighSurrogate(text[start - 1]))
+                --start;
+            char32_t cp = text[start];
+            if (IsHighSurrogate(text[start]) && start + 1 < text.size() && IsLowSurrogate(text[start + 1]))
             {
-                return true;
+                cp = 0x10000 + ((static_cast<char32_t>(text[start] - 0xD800) << 10) |
+                    static_cast<char32_t>(text[start + 1] - 0xDC00));
             }
-            const auto ch = static_cast<unsigned char>(value);
-            return std::isalnum(ch) != 0 || value == u'_';
+            return UnicodeWord::IsWordCharacter(cp);
+        }
+
+        bool WholeWordMatch(std::u16string_view text, std::size_t start, std::size_t length,
+                            std::u16string_view query) noexcept
+        {
+            return !(IsWordAt(query, 0) && start > 0 && IsWordAt(text, start - 1)) &&
+                !(IsWordAt(query, query.size() - 1) && start + length < text.size() && IsWordAt(text, start + length));
         }
 
         char16_t FoldAscii(char16_t value) noexcept
@@ -338,12 +353,7 @@ namespace MonacoNative::Core
 
             if (wholeWord)
             {
-                const auto leftWord = i > 0 && IsWordCharacter(text[i - 1]);
-                const auto rightIndex = i + query.size();
-                const auto rightWord = rightIndex < text.size() && IsWordCharacter(text[rightIndex]);
-                const auto queryStartsWord = IsWordCharacter(query.front());
-                const auto queryEndsWord = IsWordCharacter(query.back());
-                if ((queryStartsWord && leftWord) || (queryEndsWord && rightWord))
+                if (!WholeWordMatch(text, i, query.size(), query))
                 {
                     ++i;
                     continue;
@@ -357,6 +367,52 @@ namespace MonacoNative::Core
                 text.substr(i, query.size()),
             });
             i += std::max<std::size_t>(1, query.size());
+        }
+        return matches;
+    }
+
+    std::optional<Range> TextModel::GetWordRangeAtPosition(Position position) const
+    {
+        if (position.lineNumber < 1 || static_cast<std::size_t>(position.lineNumber) > GetLineCount())
+            return std::nullopt;
+        const auto line = GetLineContent(position.lineNumber);
+        const auto requested = static_cast<std::size_t>(std::max(1, position.column) - 1);
+        const auto index = std::min(requested, line.size());
+        if (!IsWordAt(line, index)) return std::nullopt;
+        auto start = index;
+        auto end = index + 1;
+        while (start > 0 && IsWordAt(line, start - 1)) --start;
+        while (end < line.size() && IsWordAt(line, end)) ++end;
+        // The column range is half-open; a surrogate pair remains indivisible.
+        return Range{position.lineNumber, static_cast<std::int32_t>(start + 1),
+            position.lineNumber, static_cast<std::int32_t>(end + 1)};
+    }
+
+    std::vector<FindMatch> TextModel::FindMatchesInLines(std::u16string_view query,
+        std::int32_t firstLine, std::int32_t lastLine, bool matchCase, bool wholeWord, std::size_t limit) const
+    {
+        std::vector<FindMatch> matches;
+        if (query.empty() || limit == 0 || firstLine > lastLine) return matches;
+        const auto lineCount = static_cast<std::int32_t>(GetLineCount());
+        const auto from = std::max(1, firstLine);
+        const auto to = std::min(lineCount, lastLine);
+        for (auto lineNumber = from; lineNumber <= to && matches.size() < limit; ++lineNumber)
+        {
+            const auto line = GetLineContent(lineNumber);
+            for (std::size_t i = 0; i + query.size() <= line.size() && matches.size() < limit; )
+            {
+                if (!EqualAt(line, i, query, matchCase) ||
+                    (wholeWord && !WholeWordMatch(line, i, query.size(), query)))
+                {
+                    ++i;
+                    continue;
+                }
+                matches.push_back(FindMatch{
+                    Range{lineNumber, static_cast<std::int32_t>(i + 1),
+                          lineNumber, static_cast<std::int32_t>(i + query.size() + 1)},
+                    line.substr(i, query.size())});
+                i += query.size();
+            }
         }
         return matches;
     }

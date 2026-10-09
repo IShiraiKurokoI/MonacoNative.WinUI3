@@ -65,7 +65,15 @@ namespace MonacoNative::Core
         void SetEOL(EndOfLineSequence eol, bool recordUndo = true);
         [[nodiscard]] std::u16string GetLineIndentation(std::int32_t lineNumber) const;
         [[nodiscard]] std::u16string NormalizeIndentation(std::u16string_view indentation, std::int32_t tabSize = 4, bool insertSpaces = true) const;
+        // Code-word boundaries are model semantics, not a renderer/sample heuristic.
+        // The hit position uses Monaco's one-based UTF-16 column convention.
+        [[nodiscard]] std::optional<Range> GetWordRangeAtPosition(Position position) const;
         [[nodiscard]] std::vector<FindMatch> FindMatches(std::u16string_view query, bool matchCase = true, bool wholeWord = false, std::size_t limit = 1000) const;
+        // Virtualized occurrence highlights: inspect only the model lines backing
+        // the visible viewport, while retaining matches elsewhere on scroll.
+        [[nodiscard]] std::vector<FindMatch> FindMatchesInLines(std::u16string_view query,
+            std::int32_t firstLine, std::int32_t lastLine,
+            bool matchCase = true, bool wholeWord = true, std::size_t limit = 1000) const;
         std::size_t ReplaceAll(std::u16string_view query, std::u16string_view replacement, bool matchCase = true, bool wholeWord = false, std::size_t limit = 1000);
         [[nodiscard]] std::optional<BracketMatch> FindMatchingBracket(Position position) const;
 

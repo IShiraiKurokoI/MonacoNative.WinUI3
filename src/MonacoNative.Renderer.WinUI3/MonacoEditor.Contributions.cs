@@ -606,16 +606,11 @@ public sealed partial class MonacoEditor
 
     private MonacoRange GetWordRangeAtCaret()
     {
-        var line = _model.GetLineContent(_active.LineNumber);
-        var index = Math.Clamp(_active.Column - 1, 0, line.Length);
-        var start = index;
-        var end = index;
-        while (start > 0 && IsWordCharacter(line[start - 1])) start--;
-        while (end < line.Length && IsWordCharacter(line[end])) end++;
-        return new MonacoRange(_active.LineNumber, start + 1, _active.LineNumber, end + 1);
+        var word = _model.GetWordRangeAt(_active);
+        if (word is null && _active.Column > 1)
+            word = _model.GetWordRangeAt(new MonacoPosition(_active.LineNumber, _active.Column - 1));
+        return word ?? new MonacoRange(_active.LineNumber, _active.Column, _active.LineNumber, _active.Column);
     }
-
-    private static bool IsWordCharacter(char value) => char.IsLetterOrDigit(value) || value == '_';
 
     private void ShowAnchoredPopup(MonacoPosition anchor, string titleKey)
     {

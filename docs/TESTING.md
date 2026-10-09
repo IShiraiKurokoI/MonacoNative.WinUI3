@@ -56,7 +56,7 @@ identify:
 | Group | CTest command | Scope |
 | --- | --- | --- |
 | Core | `ctest --test-dir build -L '^core$' --output-on-failure` | Text model, cursor, folding, Unicode, commands, parity fixtures |
-| ABI | `ctest --test-dir build -L '^abi$' --output-on-failure` | Current native ABI 1.3.0, exported functions, lifetime and conversion contracts |
+| ABI | `ctest --test-dir build -L '^abi$' --output-on-failure` | Current native ABI 1.4.0, exported functions, lifetime and conversion contracts |
 | Input | `ctest --test-dir build -L '^input$' --output-on-failure` | Text-store backend and Windows TSF |
 
 Windows builds the native test binaries once and runs these groups in separate

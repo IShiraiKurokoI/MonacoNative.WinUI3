@@ -130,6 +130,42 @@ namespace
         MN_CHECK_EQ(model.GetValue(), std::u16string(u"X X alphabet ALPHA"));
     }
 
+    void CodeWordSelectionAndVisibleOccurrenceSearch()
+    {
+        TextModel model(u"alpha alphabet alpha\nfoo_bar foo bar\n变量，变量 😀 café e\u0301 e\u0301", "cpp");
+        const auto word = model.GetWordRangeAtPosition({1, 3});
+        MN_CHECK(word.has_value());
+        MN_CHECK_EQ(word->startLineNumber, 1);
+        MN_CHECK_EQ(word->startColumn, 1);
+        MN_CHECK_EQ(word->endColumn, 6);
+        MN_CHECK(!model.GetWordRangeAtPosition({1, 6}).has_value());
+        MN_CHECK(!model.GetWordRangeAtPosition({3, 3}).has_value()); // Chinese comma is not a word
+        MN_CHECK(!model.GetWordRangeAtPosition({3, 7}).has_value()); // emoji is not a code word
+        const auto underscore = model.GetWordRangeAtPosition({2, 5});
+        MN_CHECK(underscore.has_value());
+        MN_CHECK_EQ(underscore->startColumn, 1);
+        MN_CHECK_EQ(underscore->endColumn, 8);
+
+        const auto firstLine = model.FindMatchesInLines(u"alpha", 1, 1);
+        MN_CHECK_EQ(firstLine.size(), 2U);
+        MN_CHECK_EQ(firstLine[0].range.startColumn, 1);
+        MN_CHECK_EQ(firstLine[1].range.startColumn, 16);
+        MN_CHECK(model.FindMatchesInLines(u"alpha", 2, 3).empty());
+        MN_CHECK_EQ(model.FindMatchesInLines(u"alpha", 1, 3, true, true, 1).size(), 1U);
+        MN_CHECK_EQ(model.FindMatchesInLines(u"bar", 2, 2).size(), 1U); // foo_bar is not bar
+        MN_CHECK_EQ(model.FindMatchesInLines(u"变量", 3, 3).size(), 2U); // punctuation separates words
+        MN_CHECK_EQ(model.FindMatchesInLines(u"e\u0301", 3, 3).size(), 2U); // combining mark is part of word
+
+        // A viewport near the end of a long document still gets its own hits,
+        // even when earlier lines contain thousands of occurrences.
+        std::u16string longDocument;
+        for (int i = 0; i < 1200; ++i) longDocument.append(u"target\n");
+        longDocument.append(u"target end");
+        TextModel longModel(std::move(longDocument));
+        MN_CHECK_EQ(longModel.FindMatchesInLines(u"target", 1199, 1201).size(), 3U);
+        MN_CHECK_EQ(longModel.FindMatchesInLines(u"target", 1201, 1201)[0].range.startLineNumber, 1201);
+    }
+
     void BracketsAndSnapshots()
     {
         TextModel model(u"a(b(c)d)e\n[x]", "cpp");
@@ -250,6 +286,7 @@ int main()
     suite.Run("SetValue resets history", SetValueResetsHistory);
     suite.Run("EOL and indentation", EolAndIndentation);
     suite.Run("search and replace all", SearchAndReplaceAll);
+    suite.Run("code word selection and viewport occurrences", CodeWordSelectionAndVisibleOccurrenceSearch);
     suite.Run("brackets and snapshots", BracketsAndSnapshots);
     suite.Run("undo/redo restores each caret position", UndoRedoRestoresCaretAtEachEdit);
     suite.Run("undo/redo selection direction and deletion", UndoRedoSelectionDirectionAndDelete);

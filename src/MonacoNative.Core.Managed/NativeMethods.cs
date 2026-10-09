@@ -215,6 +215,12 @@ internal static class NativeMethods
     internal static extern unsafe nuint mn_model_find_matches(nint handle, string query, int match_case, int whole_word, nuint limit, NativeRange* ranges, nuint range_capacity);
 
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
+    internal static extern int mn_model_get_word_range(nint handle, int line_number, int column, out NativeRange result);
+
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Unicode, ExactSpelling = true)]
+    internal static extern unsafe nuint mn_model_find_matches_in_lines(nint handle, string query, int first_line, int last_line, int match_case, int whole_word, nuint limit, NativeRange* ranges, nuint range_capacity);
+
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]
     internal static extern unsafe int mn_model_find_matching_bracket(nint handle, int line_number, int column, NativeBracketMatch* result);
 
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl, ExactSpelling = true)]

@@ -138,7 +138,7 @@ static void PseudoLocale()
     var source = new MonacoLocalizationService("en-US").GetString("monacoNative.sample.status");
     var pseudo = i18n.GetString("monacoNative.sample.status");
     Check.True(pseudo.Length > source.Length, "pseudo label should expand layout width");
-    foreach (var placeholder in new[] { "{0}", "{1}", "{2}", "{3}", "{4}" })
+    foreach (var placeholder in new[] { "{0}", "{1}", "{2}", "{3}" })
         Check.True(pseudo.Contains(placeholder, StringComparison.Ordinal), $"pseudo locale preserves {placeholder}");
     Check.True(pseudo.StartsWith("[!! ", StringComparison.Ordinal) && pseudo.EndsWith(" !!]", StringComparison.Ordinal),
         "pseudo locale is visually obvious");

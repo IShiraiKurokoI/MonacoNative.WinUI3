@@ -170,6 +170,27 @@ namespace
         mn_model_destroy(handle);
     }
 
+    void CodeWordAbi()
+    {
+        auto model = mn_model_create(AbiText(u"code code_tail code\n变量，变量").c_str(), "cpp");
+        MN_CHECK(model != nullptr);
+        mn_range word{};
+        MN_CHECK_EQ(mn_model_get_word_range(model, 1, 2, &word), 1);
+        MN_CHECK_EQ(word.start_column, 1);
+        MN_CHECK_EQ(word.end_column, 5);
+        MN_CHECK_EQ(mn_model_get_word_range(model, 2, 3, &word), 0);
+        MN_CHECK_EQ(mn_model_get_word_range(model, 1, 2, nullptr), 0);
+        const auto target = AbiText(u"code");
+        MN_CHECK_EQ(mn_model_find_matches_in_lines(model, target.c_str(), 1, 1, 1, 1, 100, nullptr, 0), 2U);
+        mn_range ranges[2]{};
+        MN_CHECK_EQ(mn_model_find_matches_in_lines(model, target.c_str(), 1, 1, 1, 1, 100, ranges, 2), 2U);
+        MN_CHECK_EQ(ranges[0].start_column, 1);
+        MN_CHECK_EQ(ranges[1].start_column, 16);
+        MN_CHECK_EQ(mn_model_find_matches_in_lines(model, target.c_str(), 2, 2, 1, 1, 100, nullptr, 0), 0U);
+        MN_CHECK_EQ(mn_model_find_matches_in_lines(nullptr, target.c_str(), 1, 1, 1, 1, 100, nullptr, 0), 0U);
+        mn_model_destroy(model);
+    }
+
     void SearchReplaceAndBrackets()
     {
         auto handle = mn_model_create(AbiText(u"Alpha alpha alphabet ALPHA (x)").c_str(), "plaintext");
@@ -488,12 +509,13 @@ int main(int argc, char* argv[])
         const char* name;
         void (*run)();
     };
-    constexpr std::array<Case, 14> cases{{
+    constexpr std::array<Case, 15> cases{{
         {"version", "current native ABI version and layout", AbiVersionContract},
         {"lifetime", "lifetime and properties", LifetimeAndBasicProperties},
         {"copy", "copy APIs and truncation", CopyApisAndTruncation},
         {"editing", "editing, history, and EOL", EditingHistoryAndEol},
         {"search", "search, replace, and brackets", SearchReplaceAndBrackets},
+        {"word", "code word range and viewport occurrences ABI", CodeWordAbi},
         {"language", "language and coordinates", LanguageAndCoordinates},
         {"view", "view projection and measured wrapping", ViewProjectionAndMeasuredWrapping},
         {"view_null", "view null contract", ViewNullContract},

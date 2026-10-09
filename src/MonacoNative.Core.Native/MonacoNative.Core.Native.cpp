@@ -1074,6 +1074,46 @@ size_t MN_CALL mn_model_find_matches(
     }
 }
 
+int MN_CALL mn_model_get_word_range(mn_model_handle handle, int32_t line_number, int32_t column, mn_range* result)
+{
+    if (!result) return 0;
+    try
+    {
+        const auto h = AsHandle(handle);
+        if (!h) return 0;
+        const auto range = h->model->GetWordRangeAtPosition({line_number, column});
+        if (!range) return 0;
+        *result = mn_range{range->startLineNumber, range->startColumn,
+                           range->endLineNumber, range->endColumn};
+        return 1;
+    }
+    catch (...) { return 0; }
+}
+
+size_t MN_CALL mn_model_find_matches_in_lines(
+    mn_model_handle handle, const mn_char16* query, int32_t first_line, int32_t last_line,
+    int match_case, int whole_word, size_t limit, mn_range* ranges, size_t range_capacity)
+{
+    try
+    {
+        const auto h = AsHandle(handle);
+        if (!h) return 0;
+        const auto matches = h->model->FindMatchesInLines(ToUtf16(query), first_line, last_line,
+            match_case != 0, whole_word != 0, limit);
+        if (ranges && range_capacity)
+        {
+            const auto count = (std::min)(matches.size(), range_capacity);
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                const auto& r = matches[i].range;
+                ranges[i] = mn_range{r.startLineNumber, r.startColumn, r.endLineNumber, r.endColumn};
+            }
+        }
+        return matches.size();
+    }
+    catch (...) { return 0; }
+}
+
 int MN_CALL mn_model_find_matching_bracket(
     mn_model_handle handle,
     int32_t line_number,

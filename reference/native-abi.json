@@ -1,6 +1,6 @@
 {
-  "abiVersion": "1.3.0",
-  "packedVersion": "0x00010300",
+  "abiVersion": "1.4.0",
+  "packedVersion": "0x00010400",
   "architectures": [
     "win-x64",
     "win-arm64"
@@ -39,6 +39,8 @@
     "mn_model_get_eol",
     "mn_model_set_eol",
     "mn_model_find_matches",
+    "mn_model_get_word_range",
+    "mn_model_find_matches_in_lines",
     "mn_model_find_matching_bracket",
     "mn_tsf_create",
     "mn_tsf_destroy",

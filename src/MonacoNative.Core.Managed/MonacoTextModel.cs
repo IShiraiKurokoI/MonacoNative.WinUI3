@@ -254,6 +254,38 @@ public sealed class MonacoTextModel : IDisposable
         return result;
     }
 
+    /// <summary>The code word under a one-based UTF-16 model position, or null on punctuation/whitespace.</summary>
+    public MonacoRange? GetWordRangeAt(MonacoPosition position)
+    {
+        var status = NativeMethods.mn_model_get_word_range(Handle, position.LineNumber, position.Column, out var range);
+        return status == 1
+            ? new MonacoRange(range.StartLine, range.StartColumn, range.EndLine, range.EndColumn)
+            : null;
+    }
+
+    /// <summary>Whole-word occurrences only in the specified model-line window (inclusive).</summary>
+    public unsafe IReadOnlyList<MonacoRange> FindMatchesInLines(string query, int firstLine, int lastLine,
+        bool matchCase = true, bool wholeWord = true, nuint limit = 1000)
+    {
+        if (string.IsNullOrEmpty(query) || limit == 0 || firstLine > lastLine)
+            return Array.Empty<MonacoRange>();
+        var count = NativeMethods.mn_model_find_matches_in_lines(Handle, query, firstLine, lastLine,
+            matchCase ? 1 : 0, wholeWord ? 1 : 0, limit, null, 0);
+        if (count == 0) return Array.Empty<MonacoRange>();
+        var native = new NativeMethods.NativeRange[checked((int)count)];
+        fixed (NativeMethods.NativeRange* ptr = native)
+        {
+            var written = NativeMethods.mn_model_find_matches_in_lines(Handle, query, firstLine, lastLine,
+                matchCase ? 1 : 0, wholeWord ? 1 : 0, limit, ptr, count);
+            if (written != count)
+                throw new InvalidOperationException("Native FindMatchesInLines returned an inconsistent count.");
+        }
+        var result = new MonacoRange[native.Length];
+        for (var i = 0; i < native.Length; i++)
+            result[i] = new MonacoRange(native[i].StartLine, native[i].StartColumn, native[i].EndLine, native[i].EndColumn);
+        return result;
+    }
+
     public nuint ReplaceAll(string query, string replacement, bool matchCase = true, bool wholeWord = false, nuint limit = 1000)
     {
         if (string.IsNullOrEmpty(query) || limit == 0)

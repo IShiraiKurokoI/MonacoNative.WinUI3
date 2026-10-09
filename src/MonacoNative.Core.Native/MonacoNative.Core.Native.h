@@ -3,7 +3,7 @@
 #include <stdint.h>
 
 #define MN_ABI_VERSION_MAJOR 1u
-#define MN_ABI_VERSION_MINOR 3u
+#define MN_ABI_VERSION_MINOR 4u
 #define MN_ABI_VERSION_PATCH 0u
 #define MN_ABI_VERSION_PACKED ((MN_ABI_VERSION_MAJOR << 16) | (MN_ABI_VERSION_MINOR << 8) | MN_ABI_VERSION_PATCH)
 
@@ -202,6 +202,10 @@ MN_API int MN_CALL mn_model_get_offset_at(mn_model_handle handle, int32_t line_n
 MN_API int MN_CALL mn_model_get_eol(mn_model_handle handle);
 MN_API int MN_CALL mn_model_set_eol(mn_model_handle handle, int eol);
 MN_API size_t MN_CALL mn_model_find_matches(mn_model_handle handle, const mn_char16* query, int match_case, int whole_word, size_t limit, mn_range* ranges, size_t range_capacity);
+MN_API int MN_CALL mn_model_get_word_range(mn_model_handle handle, int32_t line_number, int32_t column, mn_range* result);
+MN_API size_t MN_CALL mn_model_find_matches_in_lines(mn_model_handle handle, const mn_char16* query,
+    int32_t first_line, int32_t last_line, int match_case, int whole_word,
+    size_t limit, mn_range* ranges, size_t range_capacity);
 MN_API int MN_CALL mn_model_find_matching_bracket(mn_model_handle handle, int32_t line_number, int32_t column, mn_bracket_match* result);
 
 

@@ -238,6 +238,27 @@ public static class WinUiTestMouse {
     [System.Windows.Forms.SendKeys]::SendWait('{DOWN}')
     Until { $state.Current.Name -match 'Language=javascript(?:;|$)' } 'JavaScript asset selected' | Out-Null
     Check ((GetEditorText $editor).Contains('class Counter')) 'JavaScript source loaded from Assets'
+
+    # Real primary-button double-click must select the exact code identifier,
+    # not the nearest single caret column or adjoining punctuation.
+    $textPattern = [System.Windows.Automation.TextPattern]$editor.GetCurrentPattern(
+        [System.Windows.Automation.TextPattern]::Pattern)
+    $identifier = $textPattern.DocumentRange.FindText('Counter', $false, $false)
+    Check ($null -ne $identifier) 'word selection test located Counter in document'
+    $wordRects = $identifier.GetBoundingRectangles()
+    Check ($wordRects.Length -gt 0) 'UIA exposes code word screen coordinates'
+    $wordX = [int]($wordRects[0].Left + $wordRects[0].Width / 2.0)
+    $wordY = [int]($wordRects[0].Top + $wordRects[0].Height / 2.0)
+    [WinUiTestMouse]::Click($wordX, $wordY)
+    Start-Sleep -Milliseconds 100
+    [WinUiTestMouse]::Click($wordX, $wordY)
+    $selectedWord = Until {
+        $ranges = $textPattern.GetSelection()
+        if ($ranges.Count -gt 0 -and $ranges[0].GetText(-1) -eq 'Counter') { return 'Counter' }
+    } 'double click selects complete code word'
+    Check ($selectedWord -eq 'Counter') 'double click selects exactly Counter'
+    # Changes to the selection must not edit the underlying model.
+    Check ((GetEditorText $editor).Contains('class Counter')) 'double click preserves the source text'
     [System.Windows.Forms.SendKeys]::SendWait('{DOWN}')
     Until { $state.Current.Name -match 'Language=csharp(?:;|$)' } 'C# asset selected' | Out-Null
     Check ((GetEditorText $editor).Contains('public static class Program')) 'C# source loaded from Assets'

@@ -20,7 +20,7 @@ public readonly record struct MonacoNativeAbiInfo(
 public static class MonacoNativeAbi
 {
     public const uint Major = 1;
-    public const uint Minor = 3;
+    public const uint Minor = 4;
     public const uint Patch = 0;
     public const uint PackedVersion = (Major << 16) | (Minor << 8) | Patch;
 
