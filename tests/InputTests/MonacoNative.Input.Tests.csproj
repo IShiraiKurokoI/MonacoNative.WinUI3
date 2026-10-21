@@ -7,7 +7,6 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\MonacoNative.Input\MonacoNative.Input.csproj" />
-    <ProjectReference Include="..\..\src\MonacoNative.I18n\MonacoNative.I18n.csproj" />
+    <ProjectReference Include="..\..\src\MonacoNative.EditorServices\MonacoNative.EditorServices.csproj" />
   </ItemGroup>
 </Project>

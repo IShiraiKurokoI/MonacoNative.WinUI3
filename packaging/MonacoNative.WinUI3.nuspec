@@ -22,11 +22,8 @@
     <file src="..\README.md" target="README.md" />
     <file src="..\src\MonacoNative.Core.Managed\bin\x64\$configuration$\net8.0-windows10.0.26100.0\MonacoNative.Core.Managed.dll" target="lib\net8.0-windows10.0.26100.0" />
     <file src="..\src\MonacoNative.Renderer.WinUI3\bin\x64\$configuration$\net8.0-windows10.0.26100.0\MonacoNative.Renderer.WinUI3.dll" target="lib\net8.0-windows10.0.26100.0" />
-    <file src="..\src\MonacoNative.Input\bin\$configuration$\net8.0\MonacoNative.Input.dll" target="lib\net8.0-windows10.0.26100.0" />
-    <file src="..\src\MonacoNative.I18n\bin\$configuration$\net8.0\MonacoNative.I18n.dll" target="lib\net8.0-windows10.0.26100.0" />
-    <file src="..\src\MonacoNative.Accessibility\bin\$configuration$\net8.0\MonacoNative.Accessibility.dll" target="lib\net8.0-windows10.0.26100.0" />
+    <file src="..\src\MonacoNative.EditorServices\bin\$configuration$\net8.0\MonacoNative.EditorServices.dll" target="lib\net8.0-windows10.0.26100.0" />
     <file src="..\src\MonacoNative.Language\bin\$configuration$\net8.0\MonacoNative.Language.dll" target="lib\net8.0-windows10.0.26100.0" />
-    <file src="..\src\MonacoNative.Lsp\bin\$configuration$\net8.0\MonacoNative.Lsp.dll" target="lib\net8.0-windows10.0.26100.0" />
     <file src="..\src\MonacoNative.Renderer.WinUI3\bin\x64\$configuration$\net8.0-windows10.0.26100.0\*.pri" target="lib\net8.0-windows10.0.26100.0" />
     <file src="..\src\MonacoNative.Renderer.WinUI3\bin\x64\$configuration$\net8.0-windows10.0.26100.0\**\*.xbf" target="lib\net8.0-windows10.0.26100.0" />
     <file src="..\artifacts\native\x64\$configuration$\MonacoNative.Core.Native.dll" target="runtimes\win-x64\native" />

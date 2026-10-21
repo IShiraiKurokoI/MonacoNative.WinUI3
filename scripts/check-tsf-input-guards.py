@@ -10,7 +10,7 @@ def check(value, message):
 
 editor_xaml = (root / 'src/MonacoNative.Renderer.WinUI3/MonacoEditor.xaml').read_text(encoding='utf-8')
 editor_cs = (root / 'src/MonacoNative.Renderer.WinUI3/MonacoEditor.xaml.cs').read_text(encoding='utf-8')
-backend = (root / 'src/MonacoNative.Input/ImeInputBackend.cs').read_text(encoding='utf-8')
+backend = (root / 'src/MonacoNative.EditorServices/Input/ImeInputBackend.cs').read_text(encoding='utf-8')
 sample = (root / 'src/MonacoNative.SampleApp/MainWindow.xaml.cs').read_text(encoding='utf-8')
 
 check('ImeProxyTextBox' not in editor_xaml, 'hidden ImeProxyTextBox removed from XAML')
@@ -27,7 +27,7 @@ matrix = json.loads((root / 'reference/ime-interactive-matrix.json').read_text(e
 check(matrix.get('backendGate', {}).get('requiredBackends') == ['nativeTsf'], 'interactive matrix is native-TSF-only')
 check(all(case.get('backends') == ['nativeTsf'] for case in matrix.get('cases', [])), 'all IME cases target native TSF only')
 
-locale_dir = root / 'src/MonacoNative.I18n/Locales'
+locale_dir = root / 'src/MonacoNative.EditorServices/I18n/Locales'
 locale_keys = []
 for path in sorted(locale_dir.glob('*.json')):
     locale_keys.append((path.name, set(json.loads(path.read_text(encoding='utf-8')).keys())))

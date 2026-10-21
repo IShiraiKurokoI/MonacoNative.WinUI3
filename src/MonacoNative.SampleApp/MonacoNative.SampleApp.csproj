@@ -20,7 +20,7 @@
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
     <ProjectReference Include="..\MonacoNative.Core.Managed\MonacoNative.Core.Managed.csproj" />
-    <ProjectReference Include="..\MonacoNative.Input\MonacoNative.Input.csproj" />
+    <ProjectReference Include="..\MonacoNative.EditorServices\MonacoNative.EditorServices.csproj" />
     <ProjectReference Include="..\MonacoNative.Renderer.WinUI3\MonacoNative.Renderer.WinUI3.csproj" />
     <ProjectReference Include="..\MonacoNative.Core.Native\MonacoNative.Core.Native.vcxproj">
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>

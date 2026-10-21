@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>MonacoNative</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Preserve localization resource IDs used by MonacoLocalizationService. -->
+    <EmbeddedResource Include="I18n\Locales\*.json" LogicalName="MonacoNative.I18n.Locales.%(Filename)%(Extension)" />
+  </ItemGroup>
+</Project>

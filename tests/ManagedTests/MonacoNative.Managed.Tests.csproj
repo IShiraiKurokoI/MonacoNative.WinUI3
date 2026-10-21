@@ -12,8 +12,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\MonacoNative.Core.Managed\MonacoNative.Core.Managed.csproj" />
-    <ProjectReference Include="..\..\src\MonacoNative.I18n\MonacoNative.I18n.csproj" />
-    <ProjectReference Include="..\..\src\MonacoNative.Input\MonacoNative.Input.csproj" />
+    <ProjectReference Include="..\..\src\MonacoNative.EditorServices\MonacoNative.EditorServices.csproj" />
   </ItemGroup>
   <Target Name="CopyNativeCore" AfterTargets="Build">
     <Error Condition="!Exists('$(NativeCoreDll)')" Text="Native core DLL not found at $(NativeCoreDll). Build MonacoNative.Core.Native first." />

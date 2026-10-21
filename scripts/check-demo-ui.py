@@ -45,7 +45,7 @@ sample_keys = {
 }
 find_keys={'noResults','matchCount','regex','inSelection','preserveCase','toggleReplace','selectTextFirst','invalidRegex'}
 for culture in ('en-US','zh-CN','ja-JP','ko-KR'):
-    data=json.loads((root / 'src/MonacoNative.I18n/Locales' / (culture+'.json')).read_text())
+    data=json.loads((root / 'src/MonacoNative.EditorServices/I18n/Locales' / (culture+'.json')).read_text())
     missing={f'monacoNative.sample.{key}' for key in sample_keys} | {f'monacoNative.find.{key}' for key in find_keys}
     assert not (missing - data.keys()), f'{culture} missing translations: {missing - data.keys()}'
     assert all(bool(value.strip()) for value in data.values()), f'{culture}: empty translations'

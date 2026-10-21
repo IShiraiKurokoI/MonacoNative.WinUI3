@@ -4,7 +4,7 @@ Open `MonacoNative.sln`, select `Debug | x64`, restore NuGet packages and build.
 
 Active path:
 
-`MonacoNative.Core (C++) -> MonacoNative.Core.Native.dll -> MonacoNative.Core.Managed + MonacoNative.Language + MonacoNative.Lsp -> MonacoNative.Renderer.WinUI3 -> MonacoNative.SampleApp`
+`MonacoNative.Core (C++) -> MonacoNative.Core.Native.dll -> MonacoNative.Core.Managed + MonacoNative.Language (including LSP) + MonacoNative.EditorServices -> MonacoNative.Renderer.WinUI3 -> MonacoNative.SampleApp`
 
 The WinUI renderer no longer uses a `TextBox` as the editor surface. `MonacoEditor` paints through Win2D `CanvasSwapChainPanel`, measures text with DirectWrite-backed `CanvasTextLayout`, and feeds real measured widths into the native `MonacoViewModel` wrapping projection. The native `MonacoTextModel` remains authoritative for document state and undo/redo.
 
@@ -26,7 +26,7 @@ Run this on Windows for native CTest, the full solution build, and managed/PInvo
 
 ## Localization and IME input
 
-The WinUI control now exposes runtime UI localization backed by `MonacoNative.I18n`:
+The WinUI control now exposes runtime UI localization backed by the `MonacoNative.I18n` namespace in `MonacoNative.EditorServices`:
 
 ```csharp
 Editor.UiLanguage = "zh-CN";

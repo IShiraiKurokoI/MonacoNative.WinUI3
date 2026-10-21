@@ -8,9 +8,7 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MonacoNative.Core.Native", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MonacoNative.Core.Managed", "src\MonacoNative.Core.Managed\MonacoNative.Core.Managed.csproj", "{0E89D33C-0F70-4A31-B0A5-42B7B46B2670}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MonacoNative.I18n", "src\MonacoNative.I18n\MonacoNative.I18n.csproj", "{C4118A53-0F39-4AD8-B7F1-6E5B9E8E0F51}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MonacoNative.Input", "src\MonacoNative.Input\MonacoNative.Input.csproj", "{D8FA4F4A-74F1-47B7-B7D6-5E34D9E78C42}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MonacoNative.EditorServices", "src\MonacoNative.EditorServices\MonacoNative.EditorServices.csproj", "{D8FA4F4A-74F1-47B7-B7D6-5E34D9E78C42}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MonacoNative.Input.Native", "src\MonacoNative.Input.Native\MonacoNative.Input.Native.vcxproj", "{4C5C33A0-8F1B-4D60-BB16-0124E1390B72}"
 EndProject
@@ -24,13 +22,9 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MonacoNative.Input.Tests", 
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MonacoNative.NativeInput.Tsf.Tests", "tests\NativeInputTests\MonacoNative.NativeInput.Tsf.Tests.vcxproj", "{EE1B13D0-AE0E-4D93-8D78-29872BD184F0}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MonacoNative.Accessibility", "src\MonacoNative.Accessibility\MonacoNative.Accessibility.csproj", "{A8DCA442-7BE8-4C6E-B1FA-31EF1BF83511}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MonacoNative.Accessibility.Tests", "tests\AccessibilityTests\MonacoNative.Accessibility.Tests.csproj", "{DC1463A8-99BB-41A0-BD5D-1E12DC7CE219}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MonacoNative.Language.Tests", "tests\LanguageTests\MonacoNative.Language.Tests.csproj", "{E5D6E4A4-D8D4-40E2-AEFC-8708F15F1084}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MonacoNative.Lsp", "src\MonacoNative.Lsp\MonacoNative.Lsp.csproj", "{6A9CF79A-12D6-4B40-9F1D-81C1C94A3B71}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MonacoNative.Lsp.Tests", "tests\LspTests\MonacoNative.Lsp.Tests.csproj", "{4E92D17F-5319-4B76-9D8F-F0D6C2A20C39}"
 EndProject
@@ -62,18 +56,10 @@ Global
 		{E5D6E4A4-D8D4-40E2-AEFC-8708F15F1084}.Release|x64.Build.0 = Release|Any CPU
 
 
-		{A8DCA442-7BE8-4C6E-B1FA-31EF1BF83511}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{A8DCA442-7BE8-4C6E-B1FA-31EF1BF83511}.Debug|x64.Build.0 = Debug|Any CPU
-		{A8DCA442-7BE8-4C6E-B1FA-31EF1BF83511}.Release|x64.ActiveCfg = Release|Any CPU
-		{A8DCA442-7BE8-4C6E-B1FA-31EF1BF83511}.Release|x64.Build.0 = Release|Any CPU
 		{DC1463A8-99BB-41A0-BD5D-1E12DC7CE219}.Debug|x64.ActiveCfg = Debug|Any CPU
 		{DC1463A8-99BB-41A0-BD5D-1E12DC7CE219}.Debug|x64.Build.0 = Debug|Any CPU
 		{DC1463A8-99BB-41A0-BD5D-1E12DC7CE219}.Release|x64.ActiveCfg = Release|Any CPU
 		{DC1463A8-99BB-41A0-BD5D-1E12DC7CE219}.Release|x64.Build.0 = Release|Any CPU
-		{C4118A53-0F39-4AD8-B7F1-6E5B9E8E0F51}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{C4118A53-0F39-4AD8-B7F1-6E5B9E8E0F51}.Debug|x64.Build.0 = Debug|Any CPU
-		{C4118A53-0F39-4AD8-B7F1-6E5B9E8E0F51}.Release|x64.ActiveCfg = Release|Any CPU
-		{C4118A53-0F39-4AD8-B7F1-6E5B9E8E0F51}.Release|x64.Build.0 = Release|Any CPU
 		{D8FA4F4A-74F1-47B7-B7D6-5E34D9E78C42}.Debug|x64.ActiveCfg = Debug|Any CPU
 		{D8FA4F4A-74F1-47B7-B7D6-5E34D9E78C42}.Debug|x64.Build.0 = Debug|Any CPU
 		{D8FA4F4A-74F1-47B7-B7D6-5E34D9E78C42}.Release|x64.ActiveCfg = Release|Any CPU
@@ -107,10 +93,6 @@ Global
 		{A112AD47-BC25-4877-90E4-679DDA09B838}.Release|x64.ActiveCfg = Release|x64
 		{A112AD47-BC25-4877-90E4-679DDA09B838}.Release|x64.Build.0 = Release|x64
 
-		{6A9CF79A-12D6-4B40-9F1D-81C1C94A3B71}.Debug|x64.ActiveCfg = Debug|Any CPU
-		{6A9CF79A-12D6-4B40-9F1D-81C1C94A3B71}.Debug|x64.Build.0 = Debug|Any CPU
-		{6A9CF79A-12D6-4B40-9F1D-81C1C94A3B71}.Release|x64.ActiveCfg = Release|Any CPU
-		{6A9CF79A-12D6-4B40-9F1D-81C1C94A3B71}.Release|x64.Build.0 = Release|Any CPU
 		{4E92D17F-5319-4B76-9D8F-F0D6C2A20C39}.Debug|x64.ActiveCfg = Debug|Any CPU
 		{4E92D17F-5319-4B76-9D8F-F0D6C2A20C39}.Debug|x64.Build.0 = Debug|Any CPU
 		{4E92D17F-5319-4B76-9D8F-F0D6C2A20C39}.Release|x64.ActiveCfg = Release|Any CPU

@@ -6,7 +6,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\src\MonacoNative.Accessibility\MonacoNative.Accessibility.csproj" />
-    <ProjectReference Include="..\..\src\MonacoNative.I18n\MonacoNative.I18n.csproj" />
+    <ProjectReference Include="..\..\src\MonacoNative.EditorServices\MonacoNative.EditorServices.csproj" />
   </ItemGroup>
 </Project>

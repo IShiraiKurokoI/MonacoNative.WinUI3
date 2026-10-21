@@ -17,10 +17,7 @@
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
     <PackageReference Include="Microsoft.Graphics.Win2D" Version="1.4.0" />
     <ProjectReference Include="..\MonacoNative.Core.Managed\MonacoNative.Core.Managed.csproj" />
-    <ProjectReference Include="..\MonacoNative.I18n\MonacoNative.I18n.csproj" />
-    <ProjectReference Include="..\MonacoNative.Input\MonacoNative.Input.csproj" />
-    <ProjectReference Include="..\MonacoNative.Accessibility\MonacoNative.Accessibility.csproj" />
+    <ProjectReference Include="..\MonacoNative.EditorServices\MonacoNative.EditorServices.csproj" />
     <ProjectReference Include="..\MonacoNative.Language\MonacoNative.Language.csproj" />
-    <ProjectReference Include="..\MonacoNative.Lsp\MonacoNative.Lsp.csproj" />
   </ItemGroup>
 </Project>

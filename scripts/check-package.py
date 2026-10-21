@@ -20,11 +20,8 @@ with zipfile.ZipFile(p) as z:
           'runtimes/win-arm64/native/MonacoNative.Core.Native.dll',
           'lib/net8.0-windows10.0.26100.0/MonacoNative.Core.Managed.dll',
           'lib/net8.0-windows10.0.26100.0/MonacoNative.Renderer.WinUI3.dll',
-          'lib/net8.0-windows10.0.26100.0/MonacoNative.Input.dll',
-          'lib/net8.0-windows10.0.26100.0/MonacoNative.I18n.dll',
-          'lib/net8.0-windows10.0.26100.0/MonacoNative.Accessibility.dll',
+          'lib/net8.0-windows10.0.26100.0/MonacoNative.EditorServices.dll',
           'lib/net8.0-windows10.0.26100.0/MonacoNative.Language.dll',
-          'lib/net8.0-windows10.0.26100.0/MonacoNative.Lsp.dll',
           'buildTransitive/net8.0-windows10.0.26100.0/MonacoNative.WinUI3.targets',
         }
     if p.name.startswith('MonacoNative.WinRT.CoreHost.') and 'lib/native/_._' in names and z.read('lib/native/_._'):
