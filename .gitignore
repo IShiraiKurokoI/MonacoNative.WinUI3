@@ -27,8 +27,15 @@ Generated Files/
 __pycache__/
 *.py[cod]
 .pytest_cache/
+# All C# / WinUI project and test output folders at any depth
 **/bin/
 **/obj/
 
 # Test artifacts
 artifacts/
+
+# Explicit pinned GitHub source checkouts (restored by scripts/upstream.py)
+/external/llvm-project/
+/external/roslyn/
+/external/typescript/
+/external/*.fetch-*/

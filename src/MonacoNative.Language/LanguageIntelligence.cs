@@ -90,3 +90,19 @@ public interface IDocumentSemanticTokensProvider
         ILanguageTextModel model,
         CancellationToken cancellationToken);
 }
+
+/// <summary>Pull diagnostics for an immutable document snapshot.</summary>
+public interface IDocumentDiagnosticsProvider
+{
+    ValueTask<IReadOnlyList<LanguageDiagnostic>?> ProvideDiagnosticsAsync(ILanguageTextModel model, CancellationToken cancellationToken);
+}
+
+/// <summary>Inclusive, 1-based model line numbers. The header line remains visible.</summary>
+public sealed record LanguageFoldingRange(int StartLineNumber, int EndLineNumber, string? Kind = null);
+public sealed record FoldingContext(int? RangeLimit = null, Action<Uri>? OnRangeLimitExceeded = null);
+public interface IFoldingRangeProvider
+{
+    // null means not applicable; an empty result is authoritative and must NOT enable heuristic fallback.
+    ValueTask<IReadOnlyList<LanguageFoldingRange>?> ProvideFoldingRangesAsync(
+        ILanguageTextModel model, FoldingContext context, CancellationToken cancellationToken);
+}

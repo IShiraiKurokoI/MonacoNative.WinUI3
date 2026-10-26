@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using MonacoNative.Language;
 
 namespace MonacoNative.Lsp;
@@ -13,13 +14,16 @@ public sealed class LspLanguageAdapter :
     IDocumentSemanticTokensProvider, IInlayHintsProvider, ICodeActionProvider, IDisposable
 {
     private readonly LspClient _client;
+    private readonly Func<CancellationToken, ValueTask>? _synchronize;
     private readonly MonacoLanguageService _languages;
     private readonly List<IDisposable> _registrations = new();
     private int _disposed;
 
-    public LspLanguageAdapter(LspClient client, MonacoLanguageService languages, LanguageSelector selector)
+    public LspLanguageAdapter(LspClient client, MonacoLanguageService languages, LanguageSelector selector,
+        Func<CancellationToken, ValueTask>? synchronize = null)
     {
         _client = client ?? throw new ArgumentNullException(nameof(client));
+        _synchronize = synchronize;
         _languages = languages ?? throw new ArgumentNullException(nameof(languages));
         ArgumentNullException.ThrowIfNull(selector);
         if (client.State != LspClientState.Initialized)
@@ -47,9 +51,15 @@ public sealed class LspLanguageAdapter :
     public IReadOnlyList<string> SignatureHelpRetriggerCharacters => _client.ServerCapabilities.SignatureRetriggerCharacters;
     public SemanticTokensLegend Legend => _client.ServerCapabilities.SemanticTokensLegend;
 
+    private async ValueTask<JsonElement?> RequestSyncedAsync(string method, object? parameters, CancellationToken cancellationToken)
+    {
+        if (_synchronize is not null) await _synchronize(cancellationToken).ConfigureAwait(false);
+        return await _client.RequestAsync(method, parameters, cancellationToken).ConfigureAwait(false);
+    }
+
     public async ValueTask<CompletionList?> ProvideCompletionItemsAsync(ILanguageTextModel model, LanguagePosition position, CompletionContext context, CancellationToken cancellationToken)
     {
-        var result = await _client.RequestAsync("textDocument/completion", new
+        var result = await RequestSyncedAsync("textDocument/completion", new
         {
             textDocument = LspConversions.TextDocument(model.Uri),
             position = LspConversions.Position(position),
@@ -75,42 +85,100 @@ public sealed class LspLanguageAdapter :
         }
         else return null;
 
+        var defaults = root.ValueKind == JsonValueKind.Object && root.TryGetProperty("itemDefaults", out var d) ? d : default;
         var output = new List<CompletionItem>();
         foreach (var item in items.EnumerateArray())
         {
-            if (item.ValueKind != JsonValueKind.Object || !item.TryGetProperty("label", out var labelElement)) continue;
-            var label = labelElement.ValueKind == JsonValueKind.String ? labelElement.GetString() ?? string.Empty : labelElement.GetRawText();
-            var kind = item.TryGetProperty("kind", out var kindElement) && kindElement.TryGetInt32(out var k) ? MapCompletionKind(k) : CompletionItemKind.Text;
-            var detail = item.TryGetProperty("detail", out var detailElement) ? detailElement.GetString() : null;
-            var documentation = item.TryGetProperty("documentation", out var documentationElement) ? LspConversions.MarkdownText(documentationElement) : null;
-            var insertText = item.TryGetProperty("insertText", out var insertTextElement) ? insertTextElement.GetString() : null;
-            LanguageRange? range = null;
-            if (item.TryGetProperty("textEdit", out var textEdit) && textEdit.ValueKind == JsonValueKind.Object)
-            {
-                if (textEdit.TryGetProperty("newText", out var newText)) insertText = newText.GetString() ?? insertText;
-                if (textEdit.TryGetProperty("range", out var editRange)) range = LspConversions.ParseRange(editRange);
-                else if (textEdit.TryGetProperty("replace", out var replaceRange)) range = LspConversions.ParseRange(replaceRange);
-                else if (textEdit.TryGetProperty("insert", out var insertRange)) range = LspConversions.ParseRange(insertRange);
-            }
-            var additional = item.TryGetProperty("additionalTextEdits", out var additionalElement)
-                ? LspConversions.ParseTextEdits(additionalElement) : Array.Empty<LanguageTextEdit>();
-            Func<CancellationToken, ValueTask>? command = null;
-            if (item.TryGetProperty("command", out var commandElement) && TryParseCommand(commandElement, out var commandId, out var commandArguments))
-                command = ct => _client.ExecuteCommandAsync(commandId, commandArguments, ct);
-            output.Add(new CompletionItem(
-                label, kind, detail, documentation, insertText,
-                item.TryGetProperty("sortText", out var sortText) ? sortText.GetString() : null,
-                item.TryGetProperty("filterText", out var filterText) ? filterText.GetString() : null,
-                range, additional, command));
+            if (item.ValueKind != JsonValueKind.Object || !item.TryGetProperty("label", out _)) continue;
+            output.Add(ParseCompletionItem(NormalizeCompletion(item, defaults), allowResolve: true));
         }
         return new CompletionList(output, isIncomplete);
     }
 
-    public ValueTask<CompletionItem> ResolveCompletionItemAsync(CompletionItem item, CancellationToken cancellationToken) => ValueTask.FromResult(item);
+    private static JsonElement NormalizeCompletion(JsonElement item, JsonElement defaults)
+    {
+        var normalized = JsonNode.Parse(item.GetRawText())!.AsObject();
+        if (defaults.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var key in new[] { "commitCharacters", "insertTextFormat", "insertTextMode", "data" })
+                if (!normalized.ContainsKey(key) && defaults.TryGetProperty(key, out var value))
+                    normalized[key] = JsonNode.Parse(value.GetRawText());
+            if (!normalized.ContainsKey("textEdit") && defaults.TryGetProperty("editRange", out var range))
+            {
+                var text = normalized["textEditText"]?.GetValue<string>() ?? normalized["insertText"]?.GetValue<string>() ?? normalized["label"]!.GetValue<string>();
+                var edit = new JsonObject { ["newText"] = text };
+                if (range.TryGetProperty("start", out _)) edit["range"] = JsonNode.Parse(range.GetRawText());
+                else
+                {
+                    if (range.TryGetProperty("insert", out var insert)) edit["insert"] = JsonNode.Parse(insert.GetRawText());
+                    if (range.TryGetProperty("replace", out var replace)) edit["replace"] = JsonNode.Parse(replace.GetRawText());
+                }
+                normalized["textEdit"] = edit;
+            }
+        }
+        return JsonSerializer.SerializeToElement(normalized);
+    }
+
+    private CompletionItem ParseCompletionItem(JsonElement item, bool allowResolve)
+    {
+        static string? String(JsonElement value, string key) => value.ValueKind == JsonValueKind.Object &&
+            value.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+        static bool True(JsonElement value, string key) => value.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.True;
+        var label = String(item, "label") ?? "";
+        var kind = item.TryGetProperty("kind", out var k) && k.TryGetInt32(out var n) ? MapCompletionKind(n) : CompletionItemKind.Text;
+        var text = String(item, "insertText") ?? label;
+        LanguageRange? insertRange = null; LanguageRange? replaceRange = null;
+        if (item.TryGetProperty("textEdit", out var edit) && edit.ValueKind == JsonValueKind.Object)
+        {
+            text = String(edit, "newText") ?? text;
+            if (edit.TryGetProperty("range", out var range)) insertRange = replaceRange = LspConversions.ParseRange(range);
+            else
+            {
+                if (edit.TryGetProperty("insert", out var insert)) insertRange = LspConversions.ParseRange(insert);
+                if (edit.TryGetProperty("replace", out var replace)) replaceRange = LspConversions.ParseRange(replace);
+            }
+        }
+        var snippet = item.TryGetProperty("insertTextFormat", out var format) && format.TryGetInt32(out var f) && f == 2 ? text : null;
+        var expanded = snippet is null ? new LspSnippetText.Expanded(text, null) : LspSnippetText.ExpandWithCursor(snippet);
+        var additional = item.TryGetProperty("additionalTextEdits", out var edits) ? LspConversions.ParseTextEdits(edits) : Array.Empty<LanguageTextEdit>();
+        Func<CancellationToken, ValueTask>? command = null;
+        string? commandId = null;
+        if (item.TryGetProperty("command", out var cmd) && TryParseCommand(cmd, out var id, out var arguments))
+        {
+            commandId = id;
+            command = ct => _client.ExecuteCommandAsync(id, arguments, ct);
+        }
+        var labels = item.TryGetProperty("labelDetails", out var details) ? details : default;
+        var deprecated = True(item, "deprecated") || item.TryGetProperty("tags", out var tags) && tags.ValueKind == JsonValueKind.Array && tags.EnumerateArray().Any(t => t.TryGetInt32(out var tag) && tag == 1);
+        var commit = item.TryGetProperty("commitCharacters", out var chars) && chars.ValueKind == JsonValueKind.Array
+            ? chars.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => x.GetString()!).ToArray() : Array.Empty<string>();
+        Func<CancellationToken, ValueTask<CompletionItem>>? resolver = null;
+        if (allowResolve && _client.ServerCapabilities.CompletionResolve)
+        {
+            var original = item.Clone();
+            resolver = async ct =>
+            {
+                var response = await _client.RequestAsync("completionItem/resolve", original, ct).ConfigureAwait(false);
+                if (response is null || response.Value.ValueKind != JsonValueKind.Object) return ParseCompletionItem(original, false);
+                var merged = JsonNode.Parse(original.GetRawText())!.AsObject();
+                foreach (var property in response.Value.EnumerateObject()) merged[property.Name] = JsonNode.Parse(property.Value.GetRawText());
+                return ParseCompletionItem(JsonSerializer.SerializeToElement(merged), false);
+            };
+        }
+        return new CompletionItem(label, kind, String(item, "detail"),
+            item.TryGetProperty("documentation", out var doc) ? LspConversions.MarkdownText(doc) : null,
+            expanded.Text, String(item, "sortText"), String(item, "filterText"), insertRange ?? replaceRange,
+            additional, command, expanded.CaretOffset, snippet, insertRange, replaceRange,
+            True(item, "preselect"), deprecated, commit, String(labels, "detail"), String(labels, "description"),
+            item.TryGetProperty("insertTextMode", out var mode) && mode.TryGetInt32(out var m) ? m : 1, resolver, commandId);
+    }
+
+    public ValueTask<CompletionItem> ResolveCompletionItemAsync(CompletionItem item, CancellationToken cancellationToken) =>
+        item.Resolve is null ? ValueTask.FromResult(item) : item.Resolve(cancellationToken);
 
     public async ValueTask<Hover?> ProvideHoverAsync(ILanguageTextModel model, LanguagePosition position, CancellationToken cancellationToken)
     {
-        var result = await _client.RequestAsync("textDocument/hover", LspConversions.TextDocumentPosition(model, position), cancellationToken).ConfigureAwait(false);
+        var result = await RequestSyncedAsync("textDocument/hover", LspConversions.TextDocumentPosition(model, position), cancellationToken).ConfigureAwait(false);
         if (result is null || result.Value.ValueKind != JsonValueKind.Object) return null;
         var root = result.Value;
         var contents = new List<MarkdownString>();
@@ -127,7 +195,7 @@ public sealed class LspLanguageAdapter :
 
     public async ValueTask<SignatureHelp?> ProvideSignatureHelpAsync(ILanguageTextModel model, LanguagePosition position, SignatureHelpContext context, CancellationToken cancellationToken)
     {
-        var result = await _client.RequestAsync("textDocument/signatureHelp", new
+        var result = await RequestSyncedAsync("textDocument/signatureHelp", new
         {
             textDocument = LspConversions.TextDocument(model.Uri),
             position = LspConversions.Position(position),
@@ -172,10 +240,10 @@ public sealed class LspLanguageAdapter :
     }
 
     public async ValueTask<IReadOnlyList<LanguageLocation>?> ProvideDefinitionAsync(ILanguageTextModel model, LanguagePosition position, CancellationToken cancellationToken) =>
-        LspConversions.ParseLocations(await _client.RequestAsync("textDocument/definition", LspConversions.TextDocumentPosition(model, position), cancellationToken).ConfigureAwait(false));
+        LspConversions.ParseLocations(await RequestSyncedAsync("textDocument/definition", LspConversions.TextDocumentPosition(model, position), cancellationToken).ConfigureAwait(false));
 
     public async ValueTask<IReadOnlyList<LanguageLocation>?> ProvideReferencesAsync(ILanguageTextModel model, LanguagePosition position, ReferenceContext context, CancellationToken cancellationToken) =>
-        LspConversions.ParseLocations(await _client.RequestAsync("textDocument/references", new
+        LspConversions.ParseLocations(await RequestSyncedAsync("textDocument/references", new
         {
             textDocument = LspConversions.TextDocument(model.Uri),
             position = LspConversions.Position(position),
@@ -185,7 +253,7 @@ public sealed class LspLanguageAdapter :
     public async ValueTask<RenameLocation?> ResolveRenameLocationAsync(ILanguageTextModel model, LanguagePosition position, CancellationToken cancellationToken)
     {
         if (!_client.ServerCapabilities.PrepareRename) return null;
-        var result = await _client.RequestAsync("textDocument/prepareRename", LspConversions.TextDocumentPosition(model, position), cancellationToken).ConfigureAwait(false);
+        var result = await RequestSyncedAsync("textDocument/prepareRename", LspConversions.TextDocumentPosition(model, position), cancellationToken).ConfigureAwait(false);
         if (result is null || result.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined) return new RenameLocation(new LanguageRange(position.LineNumber, position.Column, position.LineNumber, position.Column), string.Empty, "Rename is not valid at this position.");
         var root = result.Value;
         if (root.ValueKind != JsonValueKind.Object) return null;
@@ -198,7 +266,7 @@ public sealed class LspLanguageAdapter :
 
     public async ValueTask<WorkspaceEdit?> ProvideRenameEditsAsync(ILanguageTextModel model, LanguagePosition position, string newName, CancellationToken cancellationToken)
     {
-        var result = await _client.RequestAsync("textDocument/rename", new
+        var result = await RequestSyncedAsync("textDocument/rename", new
         {
             textDocument = LspConversions.TextDocument(model.Uri),
             position = LspConversions.Position(position),
@@ -209,13 +277,13 @@ public sealed class LspLanguageAdapter :
 
     public async ValueTask<IReadOnlyList<LanguageTextEdit>?> ProvideDocumentFormattingEditsAsync(ILanguageTextModel model, FormattingOptions options, CancellationToken cancellationToken)
     {
-        var result = await _client.RequestAsync("textDocument/formatting", new { textDocument = LspConversions.TextDocument(model.Uri), options = LspConversions.Formatting(options) }, cancellationToken).ConfigureAwait(false);
+        var result = await RequestSyncedAsync("textDocument/formatting", new { textDocument = LspConversions.TextDocument(model.Uri), options = LspConversions.Formatting(options) }, cancellationToken).ConfigureAwait(false);
         return LspConversions.ParseTextEdits(result);
     }
 
     public async ValueTask<IReadOnlyList<LanguageTextEdit>?> ProvideDocumentRangeFormattingEditsAsync(ILanguageTextModel model, LanguageRange range, FormattingOptions options, CancellationToken cancellationToken)
     {
-        var result = await _client.RequestAsync("textDocument/rangeFormatting", new
+        var result = await RequestSyncedAsync("textDocument/rangeFormatting", new
         {
             textDocument = LspConversions.TextDocument(model.Uri),
             range = LspConversions.Range(range),
@@ -226,7 +294,7 @@ public sealed class LspLanguageAdapter :
 
     public async ValueTask<SemanticTokens?> ProvideDocumentSemanticTokensAsync(ILanguageTextModel model, CancellationToken cancellationToken)
     {
-        var result = await _client.RequestAsync("textDocument/semanticTokens/full", new { textDocument = LspConversions.TextDocument(model.Uri) }, cancellationToken).ConfigureAwait(false);
+        var result = await RequestSyncedAsync("textDocument/semanticTokens/full", new { textDocument = LspConversions.TextDocument(model.Uri) }, cancellationToken).ConfigureAwait(false);
         if (result is null || result.Value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined) return null;
         var root = result.Value;
         if (root.ValueKind != JsonValueKind.Object || !root.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array) return null;
@@ -255,7 +323,7 @@ public sealed class LspLanguageAdapter :
 
     public async ValueTask<IReadOnlyList<InlayHint>?> ProvideInlayHintsAsync(ILanguageTextModel model, LanguageRange range, CancellationToken cancellationToken)
     {
-        var result = await _client.RequestAsync("textDocument/inlayHint", new { textDocument = LspConversions.TextDocument(model.Uri), range = LspConversions.Range(range) }, cancellationToken).ConfigureAwait(false);
+        var result = await RequestSyncedAsync("textDocument/inlayHint", new { textDocument = LspConversions.TextDocument(model.Uri), range = LspConversions.Range(range) }, cancellationToken).ConfigureAwait(false);
         if (result is null || result.Value.ValueKind != JsonValueKind.Array) return Array.Empty<InlayHint>();
         var output = new List<InlayHint>();
         foreach (var item in result.Value.EnumerateArray())
@@ -281,7 +349,7 @@ public sealed class LspLanguageAdapter :
         var diagnostics = _client.DiagnosticsSnapshot.TryGetValue(model.Uri, out var snapshot)
             ? snapshot.Diagnostics.Where(diagnostic => RangesIntersect(range, diagnostic.Range)).Select(LspConversions.Diagnostic).ToArray()
             : Array.Empty<object>();
-        var result = await _client.RequestAsync("textDocument/codeAction", new
+        var result = await RequestSyncedAsync("textDocument/codeAction", new
         {
             textDocument = LspConversions.TextDocument(model.Uri),
             range = LspConversions.Range(range),

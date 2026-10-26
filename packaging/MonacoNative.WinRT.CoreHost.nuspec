@@ -20,6 +20,8 @@
   <files>
     <file src="..\LICENSE" target="LICENSE" />
     <file src="..\README.md" target="README.md" />
+    <file src="..\THIRD_PARTY_NOTICES.md" target="THIRD_PARTY_NOTICES.md" />
+    <file src="..\doc\**\*" target="doc" />
     <!-- This native package has no managed compile assembly; NuGet recognizes _._
          as the empty lib/native TFM marker matching the native dependency group. -->
     <file src="empty\_._" target="lib\native\_._" />

@@ -8,4 +8,4 @@ The test suites cover portable C++ text/view algorithms, native ABI, managed inp
 - `RendererGoldenTests`: off-screen Win2D/DirectWrite rendering verification (Windows).
 - `UiAutomationTests`: real Windows desktop/UI Automation input and profiler export smoke test.
 
-Commands and supported environments: [`../docs/TESTING.md`](../docs/TESTING.md). UI tests require an unlocked Windows desktop; do not run in headless CI.
+Commands and supported environments: [`../doc/TESTING.md`](../doc/TESTING.md). UI tests require an unlocked Windows desktop; do not run in headless CI.

@@ -13,9 +13,15 @@
   <PropertyGroup Condition="'$(Configuration)'=='Release'" Label="Configuration"><UseDebugLibraries>false</UseDebugLibraries><WholeProgramOptimization>true</WholeProgramOptimization></PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <PropertyGroup><OutDir>$(ProjectDir)..\..\artifacts\native\$(Platform)\$(Configuration)\</OutDir><IntDir>$(ProjectDir)..\..\artifacts\obj\Core.Native\$(Platform)\$(Configuration)\</IntDir><TargetName>MonacoNative.Core.Native</TargetName></PropertyGroup>
-  <ItemDefinitionGroup><ClCompile><WarningLevel>Level4</WarningLevel><LanguageStandard>stdcpp20</LanguageStandard><ConformanceMode>true</ConformanceMode><PreprocessorDefinitions>MONACONATIVE_CORE_NATIVE_EXPORTS;UNICODE;_UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions><AdditionalIncludeDirectories>$(ProjectDir)..\MonacoNative.Core\include;$(ProjectDir)..\MonacoNative.Input.Native\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories></ClCompile><Link><AdditionalDependencies>ole32.lib;uuid.lib;%(AdditionalDependencies)</AdditionalDependencies></Link></ItemDefinitionGroup>
-  <ItemGroup><ClInclude Include="MonacoNative.Core.Native.h" /></ItemGroup>
-  <ItemGroup><ClCompile Include="MonacoNative.Core.Native.cpp" /></ItemGroup>
+  <ItemDefinitionGroup><ClCompile><WarningLevel>Level4</WarningLevel><LanguageStandard>stdcpp20</LanguageStandard><ConformanceMode>true</ConformanceMode><PreprocessorDefinitions>MONACONATIVE_CORE_NATIVE_EXPORTS;UNICODE;_UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions><AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)..\MonacoNative.Core\include;$(ProjectDir)..\MonacoNative.Input.Native\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories></ClCompile><Link><AdditionalDependencies>ole32.lib;uuid.lib;%(AdditionalDependencies)</AdditionalDependencies></Link></ItemDefinitionGroup>
+  <ItemGroup><ClInclude Include="MonacoNative.Core.Native.h" /><ClInclude Include="MonacoNative.Language.Native.h" /><ClInclude Include="NativeLanguageSupport.h" /><ClInclude Include="..\MonacoNative.Language.TypeScript\Native\TypeScriptTables.h" /><ClInclude Include="..\MonacoNative.Language.TypeScript\Native\TypeScriptScanner.h" /><ClInclude Include="..\MonacoNative.Language.TypeScript\Native\TypeScriptDeclarations.h" /><ClInclude Include="..\MonacoNative.Language.TypeScript\Native\TypeScriptBasicEditing.h" /><ClInclude Include="..\MonacoNative.Language.TypeScript\Native\TypeScriptBuiltins.h" /><ClInclude Include="..\MonacoNative.Language.TypeScript\Native\TypeScriptModules.h" /></ItemGroup>
+  <ItemGroup><ClCompile Include="MonacoNative.Core.Native.cpp" /><ClCompile Include="MonacoNative.Language.Native.cpp" /><ClCompile Include="..\MonacoNative.Language.Cpp\Native\ClangLanguageEngine.cpp" /><ClCompile Include="..\MonacoNative.Language.TypeScript\Native\TypeScriptLanguageEngine.cpp" /></ItemGroup>
   <ItemGroup><ProjectReference Include="..\MonacoNative.Core\MonacoNative.Core.vcxproj"><Project>{7E286878-F964-4B6E-8FD3-2AF594D83B1A}</Project></ProjectReference><ProjectReference Include="..\MonacoNative.Input.Native\MonacoNative.Input.Native.vcxproj"><Project>{4C5C33A0-8F1B-4D60-BB16-0124E1390B72}</Project></ProjectReference></ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Import Project="..\..\packaging\buildTransitive\MonacoNative.NativeValidation.targets" />
+  <Target Name="MonacoNativeCheckLinkedCore" AfterTargets="Build"
+          Condition="'$(OS)' == 'Windows_NT' and '$(DesignTimeBuild)' != 'true'">
+    <MonacoNative.Build.MonacoNativeValidateBinary FilePath="$(TargetPath)" Platform="$(Platform)"
+        RequiredExports="$(_MonacoNativeCoreExports)" />
+  </Target>
 </Project>

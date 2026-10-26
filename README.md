@@ -1,46 +1,57 @@
 # MonacoNative.WinUI3
 
-Native Monaco-style editing for WinUI 3 without WebView2, HTML, JavaScript or browser embedding. The project follows **Monaco Editor 0.57.0** text/view algorithms and behavior, with native C++20 core, a stable C ABI, C#/.NET 8 wrappers, a Win2D/DirectWrite renderer and native TSF text input.
+A personal hobby project for building a native WinUI 3 code editor without WebView2.
 
-**Target:** Windows 10/11, x64 and ARM64; Windows App SDK 2.4.0, Win2D 1.4.0, Windows SDK 26100 (compile), .NET 8. Supported minimum OS: Windows 10 build 19041.
+The editor uses a C++20 text core, a WinUI 3 / Win2D renderer, native Windows text input, and in-process language services. Monaco Editor and VS Code are used as behavior and implementation references where it makes sense.
 
-## Main components
+## Features
 
-- `src/MonacoNative.Core` — C++ piece tree, editing, projection, cursor, folding, undo/redo, search and diff.
-- `src/MonacoNative.Core.Native`, `src/MonacoNative.Core.Managed` — C ABI and managed adapters. See [Native ABI contract](docs/NATIVE_ABI.md) for the single supported version and release policy.
-- `src/MonacoNative.Renderer.WinUI3` — WinUI 3/Win2D renderer, input routing, decorations, minimap, code intelligence UI, accessibility and method profiler.
-- `src/MonacoNative.Input.Native` — Windows Text Services Framework (TSF); no TextBox proxy.
-- `src/MonacoNative.Language` — lexical/provider language services and LSP integration (public namespaces `MonacoNative.Language` and `MonacoNative.Lsp`).
-- `src/MonacoNative.EditorServices` — portable input/IME, accessibility and localization helpers (existing namespaces retained).
-- `src/MonacoNative.SampleApp` — interactive four-language HTML/JavaScript/C#/C++ sample browser, top-toolbar view options and left-side advanced command policies, find/replace and profiler control.
+- Native text model, undo/redo, selections, multi-cursor editing, folding, minimap, find/replace, and diff view
+- Syntax highlighting and language-aware indentation
+- Completion UI with Codicons, fuzzy ranking, snippets, placeholder navigation, and parameter hints
+- C# semantic features through in-process Roslyn
+- C++ semantic features through in-process libclang
+- Native C# / C++ ports for JSON, HTML, CSS, JavaScript, and TypeScript editing features
+- WinUI 3 sample application with C#, C++, JSON, HTML, CSS, JavaScript, and TypeScript samples
 
-## Sample language support and Find / Replace
+Language coverage is listed in [doc/LANGUAGE_SERVICES.md](doc/LANGUAGE_SERVICES.md).
 
-- The top **Example** selector reads `Assets/Samples/demo.html`, `demo.js`, `demo.cs`, and `demo.cpp` from files copied beside the executable. Example source code is not embedded in the application C#.
-- `MonacoNative.Language` now registers basic **lexical Monarch-like highlighting** and language configurations for HTML, JavaScript, C#, and C++ (also JSON/JSONC). Changing the example updates both the language ID and the text; this does **not** install a language server.
-- `MonacoNative.Language` also contains the `MonacoNative.Lsp` transport/clients/providers and `MonacoEditor.AttachLanguageServerAsync(...)` connects an initialized external client. **SampleApp does not spawn a server**; the sidebar reports LSP *not connected* unless an external host attaches one. IntelliSense/semantic analysis/diagnostics depend on a compatible running server.
-- Find (`Ctrl+F`) and Replace (`Ctrl+H`) share one collapsible editor popup. Case, whole word, regular expression, search-in-selection, previous/next match, match counts, preserve replacement case, replace current/all are supported. All matches are highlighted in the visible viewport. Plain literal searches keep the native search/replace path; regex uses a capped/time-bounded managed implementation and cannot be treated as a complete replacement for all VS Code search semantics.
-- View switches (including folding, minimap, word wrap, and CodeLens) are checked items in the toolbar **View Options** dropdown; they remain synchronized with the context menu and real editor view state.
-- Advanced non-toggle commands use the XAML `EditorContextMenuItemOptions.Mode` dependency property: `ContextMenuAndShortcut`, `ShortcutOnly`, or `Disabled`. The **default** for advanced commands is `ShortcutOnly`; basic cut/copy/paste/select all/undo/redo are on the context menu. `Disabled` blocks registered keybindings and context menu execution in the common command dispatcher. `Visibility` and `IsEnabled` remain available for legacy *menu-only* customization if `Mode=Default`.
+## Screenshots
 
-## Build and test
+<table>
+  <tr>
+    <td width="50%" align="center"><strong>Dark theme</strong><br/><br/><img src="doc/images/editor-dark.png" alt="Dark theme" width="100%" /></td>
+    <td width="50%" align="center"><strong>Light theme</strong><br/><br/><img src="doc/images/editor-light.png" alt="Light theme" width="100%" /></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Completion</strong><br/><br/><img src="doc/images/completion.png" alt="Completion" width="100%" /></td>
+    <td align="center"><strong>Editing</strong><br/><br/><img src="doc/images/editing.png" alt="Editing" width="100%" /></td>
+  </tr>
+</table>
 
-On Windows with Visual Studio C++ / .NET / Windows SDK installed:
+## Build
 
-```powershell
-./scripts/build-windows.ps1 -Configuration Release -Platform x64
-./scripts/test-windows.ps1 -Configuration Release
-./scripts/test-ui.ps1 -Configuration Release -SkipBuild
-```
+Requirements:
 
-The UI suite **requires an unlocked interactive Windows desktop**. It does not run unattended on Linux/headless runners. Method profiling is **opt-in** in SampleApp (`Profile: ON` → interact → `Export`), producing JSON and CSV in `%LOCALAPPDATA%\MonacoNative\Profiles` by default. See `docs/TESTING.md`.
+- Visual Studio 2022 with Desktop development with C++ and .NET desktop development
+- Windows SDK 10.0.26100.0
+- .NET 8 SDK
 
-Portable core (Linux/macOS): `cmake -S . -B build && cmake --build build && ctest --test-dir build --output-on-failure`.
+Open `MonacoNative.sln`, select `Debug | x64`, restore NuGet packages, and run `MonacoNative.SampleApp`.
+
+C# uses the Roslyn NuGet packages. C++ uses the fixed libclang runtime packages. JSON, HTML, CSS, JavaScript, and TypeScript services run from code in this repository. No Node.js or external language-server process is required for the built-in language packages.
+
+More build details are in [doc/BUILDING.md](doc/BUILDING.md).
 
 ## Documentation
 
-- [`docs/TECHNICAL_NOTES.md`](docs/TECHNICAL_NOTES.md): architecture, algorithm/performance invariants, pointer handling, profiler limits.
-- [`docs/BUILDING.md`](docs/BUILDING.md): build targets and prerequisites.
-- [`docs/TESTING.md`](docs/TESTING.md): unit/UI automation and profiling workflow.
+- [Architecture](doc/TECHNICAL_NOTES.md)
+- [Language services](doc/LANGUAGE_SERVICES.md)
+- [Building](doc/BUILDING.md)
+- [Testing](doc/TESTING.md)
+- [Native ABI](doc/NATIVE_ABI.md)
+- [Upstream sources and licenses](doc/UPSTREAM.md)
 
-Development history and staged change logs are intentionally not shipped. Third-party attributions remain in `THIRD_PARTY_NOTICES.md`.
+## License
+
+Project code is licensed under the [MIT License](LICENSE). Ported code, dependencies, and icons keep their original licenses and attribution. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [doc/UPSTREAM.md](doc/UPSTREAM.md).

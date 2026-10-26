@@ -40,17 +40,20 @@ public sealed class LspEditorBinding : IAsyncDisposable, IDisposable
         CancellationToken cancellationToken = default)
     {
         var source = new MonacoDocumentSource(model);
-        var adapter = new LspLanguageAdapter(client, languageService, selector);
         var session = new LspDocumentSession(client, source, documentUri);
+        LspLanguageAdapter? adapter = null;
         try
         {
             await session.OpenAsync(cancellationToken).ConfigureAwait(false);
+            // Open the document before registering server-backed completion providers.
+            // Every subsequent request waits for session.FlushAsync first.
+            adapter = new LspLanguageAdapter(client, languageService, selector, session.FlushAsync);
             return new LspEditorBinding(adapter, session, source);
         }
         catch
         {
-            adapter.Dispose();
-            session.Dispose();
+            adapter?.Dispose();
+            await session.DisposeAsync().ConfigureAwait(false);
             source.Dispose();
             throw;
         }
@@ -77,10 +80,40 @@ public sealed partial class MonacoEditor
 {
     private LspEditorBinding? _lspBinding;
     private CancellationTokenSource? _lspRefreshCts;
+    private Task? _lspRefreshTask;
     private readonly DispatcherTimer _lspRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(180) };
 
     /// <summary>The active LSP-to-editor binding, if one has been attached.</summary>
     public LspEditorBinding? LanguageServerBinding => _lspBinding;
+
+    /// <summary>
+    /// Starts the upstream language server for a concrete language package and attaches it to
+    /// this editor. Caller owns the returned client and should dispose it after detaching.
+    /// The executable must be installed separately (or supplied via executableOverride).
+    /// </summary>
+    public async Task<LspClient> ConnectLanguagePackageServerAsync(
+        ILspLanguagePackage package,
+        Uri? workspaceRoot = null,
+        string? executableOverride = null,
+        IEnumerable<string>? argumentOverride = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(package);
+        if (!package.LanguageIds.Contains(_model.LanguageId, StringComparer.OrdinalIgnoreCase))
+            throw new ArgumentException($"The language package '{package.Id}' does not support '{_model.LanguageId}'.", nameof(package));
+        var client = await LanguageServerLauncher.StartAsync(package, workspaceRoot, executableOverride,
+            argumentOverride, cancellationToken: cancellationToken).ConfigureAwait(true);
+        try
+        {
+            await AttachLanguageServerAsync(client, LanguageSelector.ForLanguage(_model.LanguageId), cancellationToken).ConfigureAwait(true);
+            return client;
+        }
+        catch
+        {
+            await client.DisposeAsync().ConfigureAwait(true);
+            throw;
+        }
+    }
 
     /// <summary>
     /// Attaches an already initialized LSP client to this editor. The editor does not own the client;
@@ -139,9 +172,9 @@ public sealed partial class MonacoEditor
         if (_lspBinding is null || _disposed || !_loaded) return;
         _lspRefreshCts?.Cancel();
         _lspRefreshCts?.Dispose();
-        var source = new CancellationTokenSource();
+        var source = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.ShutdownToken);
         _lspRefreshCts = source;
-        _ = RefreshLspFeaturesAfterEditAsync(source.Token);
+        _lspRefreshTask = _lifetime.Track(RefreshLspFeaturesAfterEditAsync(source.Token));
     }
 
     private async Task RefreshLspFeaturesAfterEditAsync(CancellationToken cancellationToken)

@@ -123,7 +123,7 @@
   "monacoNative.sample.profileError": "导出性能报告失败：{0}",
   "monacoNative.sample.loadError": "无法载入示例：{0}",
   "monacoNative.sample.formatButton": "格式化",
-  "monacoNative.sample.languageStatus": "语言：{0}\n内置词法高亮：{1}\nLSP：{2}",
+  "monacoNative.sample.languageStatus": "语言：{0}\n内置词法高亮：{1}\n实现：{2}",
   "monacoNative.sample.highlightOn": "已启用",
   "monacoNative.sample.highlightOff": "未注册",
   "monacoNative.sample.lspConnected": "已连接",
@@ -146,5 +146,10 @@
   "monacoNative.find.toggleReplace": "展开或收起替换",
   "monacoNative.sample.formatError": "格式化失败：{0}",
   "monacoNative.find.selectTextFirst": "请先选中文本，再启用选区内查找。",
-  "monacoNative.find.invalidRegex": "正则表达式无效"
+  "monacoNative.find.invalidRegex": "正则表达式无效",
+  "monacoNative.sample.nativePartial": "原生：部分源码移植",
+  "monacoNative.sample.nativeBaseline": "原生：仅基础语法",
+  "monacoNative.sample.nativeComplete": "原生：完整源码移植",
+  "monacoNative.sample.nativePortWarning": "源码迁移版：不启动外部语言服务器。完整语义补全尚未移植，包括 C# Console 成员补全。",
+  "monacoNative.sample.nativeInProcess": "进程内 Roslyn 核心（非全量源码移植）"
 }

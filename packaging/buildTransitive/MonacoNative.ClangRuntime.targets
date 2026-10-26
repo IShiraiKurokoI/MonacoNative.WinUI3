@@ -1,0 +1,40 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="$(MSBuildThisFileDirectory)MonacoNative.NativeValidation.targets" />
+  <!-- Only executable consumers have a concrete deployment to inspect. Shared
+       AnyCPU libraries and IntelliSense/design-time builds remain buildable. -->
+  <Target Name="MonacoNativeCheckBuildDependencies" AfterTargets="Build"
+          DependsOnTargets="$(MonacoNativeValidationDependsOn)"
+          Condition="'$(OS)' == 'Windows_NT' and '$(DesignTimeBuild)' != 'true' and ('$(OutputType)' == 'Exe' or '$(OutputType)' == 'WinExe')">
+    <MonacoNative.Build.MonacoNativeValidateBinary DirectoryPath="$(TargetDir)" FileName="libclang.dll"
+        Platform="$(Platform)" PlatformTarget="$(PlatformTarget)" RuntimeIdentifier="$(RuntimeIdentifier)"
+        RequiredExports="$(_MonacoNativeClangExports)" />
+    <MonacoNative.Build.MonacoNativeValidateBinary DirectoryPath="$(TargetDir)" FileName="MonacoNative.Core.Native.dll"
+        Platform="$(Platform)" PlatformTarget="$(PlatformTarget)" RuntimeIdentifier="$(RuntimeIdentifier)"
+        RequiredExports="$(_MonacoNativeCoreExports)" Condition="'$(MonacoNativeValidateCore)' == 'true'" />
+  </Target>
+  <!-- Publishing without building must validate the actual publish layout too. -->
+  <Target Name="MonacoNativeCheckPublishDependencies" AfterTargets="Publish"
+          Condition="'$(OS)' == 'Windows_NT' and '$(DesignTimeBuild)' != 'true' and ('$(OutputType)' == 'Exe' or '$(OutputType)' == 'WinExe')">
+    <Error Condition="'$(PublishSingleFile)' == 'true'" Code="MNATIVE002"
+           Text="Native deployment validation currently requires loose DLLs. PublishSingleFile is not supported by this packaging path." />
+    <MonacoNative.Build.MonacoNativeValidateBinary DirectoryPath="$(PublishDir)" FileName="libclang.dll"
+        Platform="$(Platform)" PlatformTarget="$(PlatformTarget)" RuntimeIdentifier="$(RuntimeIdentifier)"
+        RequiredExports="$(_MonacoNativeClangExports)" />
+    <MonacoNative.Build.MonacoNativeValidateBinary DirectoryPath="$(PublishDir)" FileName="MonacoNative.Core.Native.dll"
+        Platform="$(Platform)" PlatformTarget="$(PlatformTarget)" RuntimeIdentifier="$(RuntimeIdentifier)"
+        RequiredExports="$(_MonacoNativeCoreExports)" Condition="'$(MonacoNativeValidateCore)' == 'true'" />
+  </Target>
+  <!-- libclang.dll is a native RID asset supplied by the fixed NuGet dependencies.
+       Do NOT fetch/build LLVM or inspect the developer's global LLVM installation.
+       Optional resource headers remain a separate, explicit host configuration. -->
+  <Target Name="MonacoNativeValidateClangResources" BeforeTargets="PrepareForBuild"
+          Condition="'$(MonacoClangResourceDirectory)' != '' and '$(DesignTimeBuild)' != 'true'">
+    <Error Condition="!Exists('$(MonacoClangResourceDirectory)\include\stddef.h')"
+           Text="MonacoClangResourceDirectory must point to a matching Clang resource directory containing include\stddef.h, not to a compiler executable." />
+  </Target>
+  <ItemGroup Condition="'$(MonacoClangResourceDirectory)' != '' and Exists('$(MonacoClangResourceDirectory)\include\stddef.h')">
+    <None Include="$(MonacoClangResourceDirectory)\include\**\*"
+          Link="clang\lib\clang\17\include\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+</Project>

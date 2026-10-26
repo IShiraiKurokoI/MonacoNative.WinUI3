@@ -2,6 +2,12 @@ using Microsoft.Graphics.Canvas;
 using Microsoft.Graphics.Canvas.Text;
 using MonacoNative.Core;
 using MonacoNative.Language;
+using MonacoNative.Language.Json;
+using MonacoNative.Language.Html;
+using MonacoNative.Language.Css;
+using MonacoNative.Language.TypeScript;
+using MonacoNative.Language.CSharp;
+using MonacoNative.Language.Cpp;
 using Windows.UI;
 
 namespace MonacoNative.Renderer.WinUI3;
@@ -16,6 +22,60 @@ public sealed partial class MonacoEditor
     private LineRangeIndex<LanguageDiagnostic> _languageDiagnosticIndex = LineRangeIndex<LanguageDiagnostic>.Empty;
     private IReadOnlyDictionary<int, IReadOnlyList<SemanticToken>> _semanticTokensByLine = new Dictionary<int, IReadOnlyList<SemanticToken>>();
 
+    private CancellationTokenSource? _nativeDiagnosticsCts;
+    private Task? _nativeDiagnosticsTask;
+    public Exception? LastNativeLanguageServiceError { get; private set; }
+    public event EventHandler? NativeLanguageServiceFailed;
+
+    private void CancelNativeDiagnostics()
+    {
+        var old = _nativeDiagnosticsCts;
+        _nativeDiagnosticsCts = null;
+        old?.Cancel();
+        old?.Dispose();
+    }
+
+    private void ScheduleNativeDiagnostics()
+    {
+        CancelNativeDiagnostics();
+        if (_disposed || !_loaded || _lspBinding is not null) return;
+        if (!_languages.HasDiagnosticsProvider(_languageDocument))
+        { _languages.ClearDiagnostics(DocumentUri); return; }
+        var source = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.ShutdownToken);
+        _nativeDiagnosticsCts = source;
+        _nativeDiagnosticsTask = _lifetime.Track(RefreshNativeDiagnosticsAfterDelayAsync(source, source.Token));
+    }
+
+    private async Task RefreshNativeDiagnosticsAfterDelayAsync(CancellationTokenSource source, CancellationToken token)
+    {
+        try
+        {
+            // Resume on the UI thread to capture the native text model, then analyze only the copy.
+            await Task.Delay(250, token).ConfigureAwait(true);
+            if (_disposed || !_loaded || _lspBinding is not null) return;
+            var snapshot = LanguageModelSnapshot.Capture(_languageDocument);
+            var diagnostics = await Task.Run(async () =>
+                await _languages.ProvideDiagnosticsAsync(snapshot, token).ConfigureAwait(false), token).ConfigureAwait(true);
+            token.ThrowIfCancellationRequested();
+            if (_disposed || !_loaded || _lspBinding is not null || !ReferenceEquals(_nativeDiagnosticsCts, source) || !snapshot.Matches(_languageDocument)) return;
+            LastNativeLanguageServiceError = null;
+            _languages.SetDiagnostics(snapshot.Uri, diagnostics, snapshot.VersionId > int.MaxValue ? int.MaxValue : (int)snapshot.VersionId);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception error)
+        {
+            if (_disposed || token.IsCancellationRequested) return;
+            LastNativeLanguageServiceError = error;
+            NativeLanguageServiceFailed?.Invoke(this, EventArgs.Empty);
+            System.Diagnostics.Debug.WriteLine($"Native language diagnostics failed: {error}");
+        }
+        finally
+        {
+            if (ReferenceEquals(_nativeDiagnosticsCts, source))
+            { _nativeDiagnosticsCts = null; source.Dispose(); }
+        }
+    }
+
     private Color _syntaxKeywordColor = Color.FromArgb(255, 86, 156, 214);
     private Color _syntaxStringColor = Color.FromArgb(255, 206, 145, 120);
     private Color _syntaxCommentColor = Color.FromArgb(255, 106, 153, 85);
@@ -24,6 +84,20 @@ public sealed partial class MonacoEditor
     private Color _syntaxOperatorColor = Color.FromArgb(255, 212, 212, 212);
     private Color _syntaxInvalidColor = Color.FromArgb(255, 244, 71, 71);
 
+    /// <summary>
+    /// Installs built-in language modules. Each lives in a separate project and may also be
+    /// used independently via MonacoLanguageService.Packages.Install(...).
+    /// </summary>
+    private void RegisterDefaultLanguagePackages()
+    {
+        _languages.Packages.Install(new JsonLanguagePackage());
+        _languages.Packages.Install(new HtmlLanguagePackage());
+        _languages.Packages.Install(new CssLanguagePackage());
+        _languages.Packages.Install(new TypeScriptLanguagePackage());
+        _languages.Packages.Install(new CSharpLanguagePackage());
+        _languages.Packages.Install(new CppLanguagePackage());
+    }
+
     /// <summary>Monaco-style language registry and provider surface.</summary>
     public MonacoLanguageService Languages => _languages;
 
@@ -31,7 +105,23 @@ public sealed partial class MonacoEditor
     public Uri DocumentUri
     {
         get => _languageDocument.Uri;
-        set => _languageDocument.Uri = value ?? throw new ArgumentNullException(nameof(value));
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            if (_languageDocument.Uri == value) return;
+            CancelNativeDiagnostics();
+            CancelAutomaticSuggestions();
+            HideSuggestWidget();
+            CancelSnippetSession();
+            _languages.ClearDiagnostics(_languageDocument.Uri);
+            _languageDocument.Uri = value;
+            ScheduleFoldingRefresh();
+            _languageDiagnostics = Array.Empty<LanguageDiagnostic>();
+            _languageDiagnosticIndex = LineRangeIndex<LanguageDiagnostic>.Empty;
+            DiagnosticsChanged?.Invoke(this, EventArgs.Empty);
+            if (_loaded) Render(RenderDirty.Diagnostics);
+            ScheduleNativeDiagnostics();
+        }
     }
 
     public LanguageConfiguration? LanguageConfiguration => _languages.Languages.GetLanguageConfiguration(_model.LanguageId);
@@ -57,19 +147,19 @@ public sealed partial class MonacoEditor
     public async Task FormatDocumentAsync(FormattingOptions? options = null, CancellationToken cancellationToken = default)
     {
         if (_isReadOnly) return;
-        var version = _model.VersionId;
-        var edits = await _languages.ProvideDocumentFormattingEditsAsync(_languageDocument, options ?? new FormattingOptions(), cancellationToken);
-        if (_model.VersionId != version) return;
+        var snapshot = LanguageModelSnapshot.Capture(_languageDocument);
+        var edits = await _languages.ProvideDocumentFormattingEditsAsync(snapshot, options ?? new FormattingOptions(), cancellationToken);
+        if (_disposed || !snapshot.Matches(_languageDocument)) return;
         ApplyLanguageTextEdits(edits);
     }
 
     public async Task FormatSelectionAsync(FormattingOptions? options = null, CancellationToken cancellationToken = default)
     {
         if (_isReadOnly) return;
-        var version = _model.VersionId;
+        var snapshot = LanguageModelSnapshot.Capture(_languageDocument);
         var selection = Selection;
-        var edits = await _languages.ProvideDocumentRangeFormattingEditsAsync(_languageDocument, ToLanguageRange(selection), options ?? new FormattingOptions(), cancellationToken);
-        if (_model.VersionId != version) return;
+        var edits = await _languages.ProvideDocumentRangeFormattingEditsAsync(snapshot, ToLanguageRange(selection), options ?? new FormattingOptions(), cancellationToken);
+        if (_disposed || !snapshot.Matches(_languageDocument)) return;
         ApplyLanguageTextEdits(edits);
     }
 

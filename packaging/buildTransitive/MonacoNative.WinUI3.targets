@@ -1,5 +1,6 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
+    <MonacoNativeValidateCore>true</MonacoNativeValidateCore>
     <_MonacoNativeArch Condition="'$(PlatformTarget)' == 'ARM64' Or '$(Platform)' == 'ARM64'">arm64</_MonacoNativeArch>
     <_MonacoNativeArch Condition="'$(_MonacoNativeArch)' == '' And ('$(PlatformTarget)' == 'x64' Or '$(Platform)' == 'x64')">x64</_MonacoNativeArch>
     <_MonacoNativeArch Condition="'$(_MonacoNativeArch)' == '' And '$(RuntimeIdentifier)' == 'win-arm64'">arm64</_MonacoNativeArch>
@@ -29,4 +30,5 @@
           CopyToPublishDirectory="PreserveNewest"
           Visible="false" />
   </ItemGroup>
+  <Import Project="$(MSBuildThisFileDirectory)..\MonacoNative.ClangRuntime.targets" Condition="Exists('$(MSBuildThisFileDirectory)..\MonacoNative.ClangRuntime.targets')" />
 </Project>

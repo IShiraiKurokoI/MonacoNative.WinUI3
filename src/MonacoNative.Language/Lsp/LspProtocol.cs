@@ -31,6 +31,7 @@ public sealed class LspServerCapabilities
     public LspTextDocumentSyncKind TextDocumentSync { get; internal set; }
     public bool TextDocumentOpenClose { get; internal set; }
     public bool Completion { get; internal set; }
+    public bool CompletionResolve { get; internal set; }
     public bool Hover { get; internal set; }
     public bool SignatureHelp { get; internal set; }
     public bool Definition { get; internal set; }
@@ -74,7 +75,10 @@ public sealed class LspServerCapabilities
         if (capabilities.ValueKind == JsonValueKind.Object)
         {
             if (capabilities.TryGetProperty("completionProvider", out var completion) && completion.ValueKind == JsonValueKind.Object)
+                {
                 result.CompletionTriggerCharacters = ReadStringArray(completion, "triggerCharacters");
+                result.CompletionResolve = completion.TryGetProperty("resolveProvider", out var resolve) && resolve.ValueKind == JsonValueKind.True;
+            }
             if (capabilities.TryGetProperty("signatureHelpProvider", out var signature) && signature.ValueKind == JsonValueKind.Object)
             {
                 result.SignatureTriggerCharacters = ReadStringArray(signature, "triggerCharacters");

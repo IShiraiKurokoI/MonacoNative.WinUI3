@@ -43,6 +43,12 @@ foreach ($platform in @('x64', 'ARM64')) {
 # Portable managed dependencies, then the architecture-aware Windows projection/UI.
 Invoke-DotnetBuild 'src\MonacoNative.EditorServices\MonacoNative.EditorServices.csproj'
 Invoke-DotnetBuild 'src\MonacoNative.Language\MonacoNative.Language.csproj'
+Invoke-DotnetBuild 'src\MonacoNative.Language.Json\MonacoNative.Language.Json.csproj'
+Invoke-DotnetBuild 'src\MonacoNative.Language.Html\MonacoNative.Language.Html.csproj'
+Invoke-DotnetBuild 'src\MonacoNative.Language.Css\MonacoNative.Language.Css.csproj'
+Invoke-DotnetBuild 'src\MonacoNative.Language.TypeScript\MonacoNative.Language.TypeScript.csproj'
+Invoke-DotnetBuild 'src\MonacoNative.Language.CSharp\MonacoNative.Language.CSharp.csproj'
+Invoke-DotnetBuild 'src\MonacoNative.Language.Cpp\MonacoNative.Language.Cpp.csproj'
 Invoke-DotnetBuild 'src\MonacoNative.Core.Managed\MonacoNative.Core.Managed.csproj' 'x64'
 Invoke-DotnetBuild 'src\MonacoNative.Renderer.WinUI3\MonacoNative.Renderer.WinUI3.csproj' 'x64'
 Invoke-DotnetBuild 'src\MonacoNative.Core.Managed\MonacoNative.Core.Managed.csproj' 'ARM64'

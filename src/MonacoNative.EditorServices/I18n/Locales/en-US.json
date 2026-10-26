@@ -123,7 +123,7 @@
   "monacoNative.sample.profileError": "Profile export failed: {0}",
   "monacoNative.sample.loadError": "Cannot load sample: {0}",
   "monacoNative.sample.formatButton": "Format",
-  "monacoNative.sample.languageStatus": "Language: {0}\nBuilt-in lexical highlighting: {1}\nLSP: {2}",
+  "monacoNative.sample.languageStatus": "Language: {0}\nBuilt-in lexical highlighting: {1}\nBackend: {2}",
   "monacoNative.sample.highlightOn": "ON",
   "monacoNative.sample.highlightOff": "not registered",
   "monacoNative.sample.lspConnected": "connected",
@@ -146,5 +146,10 @@
   "monacoNative.find.toggleReplace": "Show / Hide Replace",
   "monacoNative.sample.formatError": "Format failed: {0}",
   "monacoNative.find.selectTextFirst": "Select text first to search in selection.",
-  "monacoNative.find.invalidRegex": "Invalid regular expression"
+  "monacoNative.find.invalidRegex": "Invalid regular expression",
+  "monacoNative.sample.nativePartial": "Native: partial source port",
+  "monacoNative.sample.nativeBaseline": "Native: syntax baseline only",
+  "monacoNative.sample.nativeComplete": "Native: complete source port",
+  "monacoNative.sample.nativePortWarning": "Source-migration build: no external language servers. Full semantic completion is not yet ported (including C# Console members).",
+  "monacoNative.sample.nativeInProcess": "In-process Roslyn core (not a complete source port)"
 }

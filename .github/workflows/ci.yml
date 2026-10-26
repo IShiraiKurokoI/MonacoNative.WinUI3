@@ -34,6 +34,8 @@ jobs:
         run: python3 scripts/check-benchmark-schema.py
       - name: Validate headless Windows smoke safeguards
         run: python3 scripts/check-windows-smoke-guards.py
+      - name: Test pinned source dependency tooling offline
+        run: python3 scripts/test-upstream.py
       - name: Configure native GCC Release build
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMONACONATIVE_WARNINGS_AS_ERRORS=ON
       - name: Build native core and ABI tests
@@ -44,12 +46,14 @@ jobs:
         run: ctest --test-dir build --output-on-failure -L '^abi$' --output-junit "$PWD/build/ctest-abi.xml"
       - name: Test native input backends
         run: ctest --test-dir build --output-on-failure -L '^input$' --output-junit "$PWD/build/ctest-input.xml"
+      - name: Test native TypeScript scanner and declaration fixtures
+        run: python3 scripts/test-native-languages.py --native-library "$PWD/build/src/MonacoNative.Core.Native/libMonacoNative.Core.Native.so"
       - name: Test text composition and internationalization
         run: dotnet run --project tests/InputTests/MonacoNative.Input.Tests.csproj -c Release
       - name: Test accessibility and pseudolocalization
         run: dotnet run --project tests/AccessibilityTests/MonacoNative.Accessibility.Tests.csproj -c Release
       - name: Test language providers and contributions
-        run: dotnet run --project tests/LanguageTests/MonacoNative.Language.Tests.csproj -c Release
+        run: MONACONATIVE_NATIVE_LIBRARY="$PWD/build/src/MonacoNative.Core.Native/libMonacoNative.Core.Native.so" dotnet run --project tests/LanguageTests/MonacoNative.Language.Tests.csproj -c Release -- --require-native
       - name: Test LSP protocol and provider integration
         run: dotnet run --project tests/LspTests/MonacoNative.Lsp.Tests.csproj -c Release
       - name: Test renderer cache and incremental invalidation
@@ -142,9 +146,6 @@ jobs:
       - name: Test accessibility and pseudolocalization
         shell: pwsh
         run: dotnet run --project tests/AccessibilityTests/MonacoNative.Accessibility.Tests.csproj -c Release
-      - name: Test language providers and contributions
-        shell: pwsh
-        run: dotnet run --project tests/LanguageTests/MonacoNative.Language.Tests.csproj -c Release
       - name: Test LSP protocol and provider integration
         shell: pwsh
         run: dotnet run --project tests/LspTests/MonacoNative.Lsp.Tests.csproj -c Release
@@ -163,6 +164,9 @@ jobs:
       - name: Test TSF and native input backend
         shell: pwsh
         run: ctest --test-dir build-core -C Release --output-on-failure -L '^input$' --output-junit "$PWD/build-core/ctest-input.xml"
+      - name: Test required native language bridges and NuGet libclang deployment
+        shell: pwsh
+        run: ./scripts/test-language-integration.ps1 -Configuration Release -Platform x64
       - name: Build x64 managed projection, WinRT and WinUI sample
         shell: pwsh
         run: ./scripts/build-windows.ps1 -Configuration Release -Platform x64

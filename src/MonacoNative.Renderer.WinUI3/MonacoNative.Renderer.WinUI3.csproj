@@ -19,5 +19,11 @@
     <ProjectReference Include="..\MonacoNative.Core.Managed\MonacoNative.Core.Managed.csproj" />
     <ProjectReference Include="..\MonacoNative.EditorServices\MonacoNative.EditorServices.csproj" />
     <ProjectReference Include="..\MonacoNative.Language\MonacoNative.Language.csproj" />
+    <ProjectReference Include="..\MonacoNative.Language.Cpp\MonacoNative.Language.Cpp.csproj" />
+    <ProjectReference Include="..\MonacoNative.Language.CSharp\MonacoNative.Language.CSharp.csproj" />
+    <ProjectReference Include="..\MonacoNative.Language.TypeScript\MonacoNative.Language.TypeScript.csproj" />
+    <ProjectReference Include="..\MonacoNative.Language.Css\MonacoNative.Language.Css.csproj" />
+    <ProjectReference Include="..\MonacoNative.Language.Html\MonacoNative.Language.Html.csproj" />
+    <ProjectReference Include="..\MonacoNative.Language.Json\MonacoNative.Language.Json.csproj" />
   </ItemGroup>
 </Project>

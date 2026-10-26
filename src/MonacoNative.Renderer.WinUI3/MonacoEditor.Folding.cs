@@ -1,5 +1,6 @@
 using Microsoft.UI.Xaml;
 using MonacoNative.Core;
+using MonacoNative.Language;
 
 namespace MonacoNative.Renderer.WinUI3;
 
@@ -10,6 +11,16 @@ public sealed partial class MonacoEditor
     private readonly DispatcherTimer _foldRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(280) };
     private SortedDictionary<int, int> _foldRanges = new();
     private readonly HashSet<int> _collapsedFolds = new();
+    private CancellationTokenSource? _foldingCts;
+    private Task? _foldingRefreshTask;
+
+    private void CancelFoldingRefresh()
+    {
+        var source = _foldingCts;
+        _foldingCts = null;
+        source?.Cancel();
+        source?.Dispose();
+    }
 
     /// <summary>Show clickable fold chevrons in the gutter; existing folds stay active when hidden.</summary>
     public bool ShowFolding
@@ -46,28 +57,70 @@ public sealed partial class MonacoEditor
 
     private void ScheduleFoldingRefresh()
     {
+        CancelFoldingRefresh();
         if (_disposed || !_loaded) return;
         _foldRefreshTimer.Stop();
         _foldRefreshTimer.Start();
     }
 
-    private void FoldRefreshTimer_Tick(object? sender, object e)
+    private async void FoldRefreshTimer_Tick(object? sender, object e)
     {
         _foldRefreshTimer.Stop();
-        RebuildFoldingRanges();
+        _foldingRefreshTask = _lifetime.Track(RebuildFoldingRangesAsync());
+        await _foldingRefreshTask;
     }
 
-    private void RebuildFoldingRanges()
+    private async Task RebuildFoldingRangesAsync()
     {
-        if (_disposed) return;
-        var count = checked((int)_model.LineCount);
-        var lines = new string[count];
-        for (var i = 0; i < count; ++i) lines[i] = _model.GetLineContent(i + 1);
-        _foldRanges = EditorFoldingRanges.Compute(lines);
-        if (_collapsedFolds.RemoveWhere(start => !_foldRanges.ContainsKey(start)) > 0 || _collapsedFolds.Count > 0)
-            ApplyFoldingProjection();
-        else Render(RenderDirty.Text);
-        FoldingChanged?.Invoke(this, EventArgs.Empty);
+        CancelFoldingRefresh();
+        if (_disposed || !_loaded) return;
+        var source = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.ShutdownToken);
+        _foldingCts = source;
+        var token = source.Token;
+        try
+        {
+            // Capture on the UI thread: providers must never read the live native model on a worker.
+            var snapshot = LanguageModelSnapshot.Capture(_languageDocument);
+            var ranges = await Task.Run(async () =>
+            {
+                var provided = await _languages.ProvideFoldingRangesAsync(snapshot, new FoldingContext(5000), token).ConfigureAwait(false);
+                token.ThrowIfCancellationRequested();
+                if (provided is null)
+                {
+                    // No applicable provider: retain the existing fallback for other languages.
+                    var lines = Enumerable.Range(1, snapshot.LineCount).Select(snapshot.GetLineContent).ToArray();
+                    return EditorFoldingRanges.Compute(lines);
+                }
+                var result = new SortedDictionary<int, int>();
+                foreach (var range in provided.OrderBy(r => r.StartLineNumber).ThenBy(r => r.EndLineNumber))
+                {
+                    token.ThrowIfCancellationRequested();
+                    if (range.StartLineNumber < 1 || range.EndLineNumber > snapshot.LineCount || range.EndLineNumber <= range.StartLineNumber) continue;
+                    // Only one chevron can be shown per model line; retain the first (innermost) range.
+                    result.TryAdd(range.StartLineNumber, range.EndLineNumber);
+                }
+                return result;
+            }, token).ConfigureAwait(true);
+            token.ThrowIfCancellationRequested();
+            if (_disposed || !_loaded || !ReferenceEquals(_foldingCts, source) || !snapshot.Matches(_languageDocument)) return;
+            _foldRanges = ranges;
+            if (_collapsedFolds.RemoveWhere(start => !_foldRanges.ContainsKey(start)) > 0 || _collapsedFolds.Count > 0)
+                ApplyFoldingProjection();
+            else Render(RenderDirty.Text);
+            FoldingChanged?.Invoke(this, EventArgs.Empty);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception error)
+        {
+            if (_disposed || token.IsCancellationRequested) return;
+            LastNativeLanguageServiceError = error;
+            NativeLanguageServiceFailed?.Invoke(this, EventArgs.Empty);
+            System.Diagnostics.Debug.WriteLine($"Native language folding failed: {error}");
+        }
+        finally
+        {
+            if (ReferenceEquals(_foldingCts, source)) { _foldingCts = null; source.Dispose(); }
+        }
     }
 
     /// <summary>Collapse/expand the code block beginning at the given 1-based model line.</summary>

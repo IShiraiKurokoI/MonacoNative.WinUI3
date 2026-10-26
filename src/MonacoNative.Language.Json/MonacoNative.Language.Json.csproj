@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>true</IsPackable>
+    <PackageId>MonacoNative.Language.Json</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>MonacoNative</Authors>
+    <Description>Json language contribution for MonacoNative (in-process C# contributions; partial source migration, see README).</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MonacoNative.Language\MonacoNative.Language.csproj" />
+  </ItemGroup>
+</Project>

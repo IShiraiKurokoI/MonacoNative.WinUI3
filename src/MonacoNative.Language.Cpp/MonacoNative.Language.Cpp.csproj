@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>true</IsPackable>
+    <PackageId>MonacoNative.Language.Cpp</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>MonacoNative</Authors>
+    <Description>In-process libclang language services with fixed Windows x64/ARM64 native runtime packages. No clangd process.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MonacoNative.Language\MonacoNative.Language.csproj" />
+    <!-- Keep both RID assets in the dependency graph. NuGet selects the application's RID;
+         the language library itself is AnyCPU and must not pick the build-host architecture. -->
+    <PackageReference Include="libclang.runtime.win-x64" Version="[17.0.4]" />
+    <PackageReference Include="libclang.runtime.win-arm64" Version="[17.0.4]" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\..\packaging\buildTransitive\MonacoNative.ClangRuntime.targets" Pack="true" PackagePath="buildTransitive\MonacoNative.Language.Cpp.targets" />
+    <None Include="..\..\packaging\buildTransitive\MonacoNative.NativeValidation.targets" Pack="true" PackagePath="buildTransitive\MonacoNative.NativeValidation.targets" />
+    <None Include="..\..\packaging\buildTransitive\MonacoNative.NativeBinaryCheck.cs" Pack="true" PackagePath="buildTransitive\MonacoNative.NativeBinaryCheck.cs" />
+  </ItemGroup>
+</Project>

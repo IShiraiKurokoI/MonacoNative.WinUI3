@@ -1,5 +1,6 @@
 param(
-    [ValidateSet('Debug', 'Release')][string]$Configuration = 'Release'
+    [ValidateSet('Debug', 'Release')][string]$Configuration = 'Release',
+    [switch]$SkipLanguageTests
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
@@ -11,8 +12,10 @@ if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 dotnet run --project (Join-Path $root 'tests\AccessibilityTests\MonacoNative.Accessibility.Tests.csproj') -c $Configuration
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-dotnet run --project (Join-Path $root 'tests\LanguageTests\MonacoNative.Language.Tests.csproj') -c $Configuration
-if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+if (-not $SkipLanguageTests) {
+    dotnet run --project (Join-Path $root 'tests\LanguageTests\MonacoNative.Language.Tests.csproj') -c $Configuration
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+}
 
 dotnet run --project (Join-Path $root 'tests\LspTests\MonacoNative.Lsp.Tests.csproj') -c $Configuration
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

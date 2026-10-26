@@ -16,12 +16,15 @@ public sealed partial class MainWindow : Window
         public override string ToString() => Label;
     }
 
-    private readonly List<IDisposable> _sampleFormatRegistrations = new();
     private bool _refreshingThemeOptions;
     private bool _updatingFeatureToggles;
     private bool _updatingMenuOptions;
     private ulong _countedCharactersVersion = ulong.MaxValue;
     private long _countedCharacters;
+    private readonly SemaphoreSlim _sampleLoadLock = new(1, 1);
+    private CancellationTokenSource? _sampleLoadCancellation;
+    private bool _closing;
+
 
     private sealed record SampleAsset(string Name, string FileName, string LanguageId)
     {
@@ -46,17 +49,29 @@ public sealed partial class MainWindow : Window
         new("JavaScript", "demo.js", "javascript"),
         new("C#", "demo.cs", "csharp"),
         new("C++", "demo.cpp", "cpp"),
+        new("JSON", "demo.json", "json"),
+        new("CSS", "demo.css", "css"),
+        new("TypeScript", "demo.ts", "typescript"),
     };
 
     public MainWindow()
     {
         InitializeComponent();
+        Editor.NativeLanguageServiceFailed += (_, _) => ProfileReportHint.Text = Editor.LastNativeLanguageServiceError?.Message ?? string.Empty;
+        var jsonPackage = Editor.Languages.Packages.Installed.OfType<MonacoNative.Language.Json.JsonLanguagePackage>().Single();
+        jsonPackage.Schemas.Register(new Uri("monaco://schemas/sample-package"), """
+            {"type":"object","required":["name","version"],"properties":{
+              "$schema":{"type":"string"},
+              "name":{"type":"string","description":"Sample package name."},
+              "version":{"type":"string","default":"1.0.0"},
+              "private":{"type":"boolean","default":true},
+              "description":{"type":"string"},
+              "scripts":{"type":"object","properties":{"start":{"type":"string"},"test":{"type":"string"},"build":{"type":"string"}}},
+              "license":{"type":"string","enum":["MIT","Apache-2.0","BSD-3-Clause"]}
+            }}
+            """, "**/demo.json");
         UiLanguageBox.ItemsSource = Editor.SupportedUiLanguages;
         UiLanguageBox.SelectedItem = Editor.UiLanguage;
-        // Four sample-only formatting providers. Full LSP formatting remains optional.
-        foreach (var sample in Samples)
-            _sampleFormatRegistrations.Add(Editor.Languages.RegisterDocumentFormattingEditProvider(
-                new LanguageSelector(sample.LanguageId), new DemoSampleFormattingProvider()));
         Editor.UiLanguageChanged += Editor_UiLanguageChanged;
         Editor.ModelChanged += (_, _) => UpdateStatus();
         Editor.FoldingChanged += (_, _) => UpdateStatus();
@@ -65,15 +80,18 @@ public sealed partial class MainWindow : Window
         Editor.ImeStateChanged += (_, _) => UpdateStatus();
         Editor.PointerCursorChanged += (_, _) => UpdateStatus();
         Editor.EditorViewOptionsChanged += (_, _) => SynchronizeFeatureToggles();
-        Closed += (_, _) =>
+        Closed += async (_, _) =>
         {
-            foreach (var registration in _sampleFormatRegistrations) registration.Dispose();
-            Editor.Dispose();
+            _closing = true;
+            // A sample load is no longer useful after the window closes. Cancel it rather
+            // than holding application shutdown on file I/O or language initialization.
+            _sampleLoadCancellation?.Cancel();
+            await Editor.DisposeAsync();
         };
         InitializeMenuOptions();
         SynchronizeFeatureToggles();
         SampleBox.ItemsSource = Samples;
-        SampleBox.SelectedIndex = 3; // C++ on first launch; all sample contents live in Assets.
+        SampleBox.SelectedIndex = 2; // Preformatted C# sample; semantic services run in-process through Roslyn.
         ApplyLocalization();
         ApplyTheme(ElementTheme.Dark);
         RefreshThemeOptions();
@@ -90,24 +108,62 @@ public sealed partial class MainWindow : Window
         if (Editor is not null) LoadSelectedSample();
     }
 
+    private static string ResolveSamplePath(SampleAsset sample) =>
+        Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "Assets", "Samples", sample.FileName));
+
+    private LanguageSourcePortStatus GetNativePortStatus() =>
+        Editor.Languages.Packages.Installed.FirstOrDefault(package =>
+            package.LanguageIds.Contains(Editor.LanguageId, StringComparer.OrdinalIgnoreCase))
+            ?.SourcePortStatus ?? LanguageSourcePortStatus.NotDeclared;
+
     private async void LoadSelectedSample()
     {
-        if (SampleBox.SelectedItem is not SampleAsset sample) return;
+        if (_closing || SampleBox.SelectedItem is not SampleAsset sample) return;
+        _sampleLoadCancellation?.Cancel();
+        var cancellation = new CancellationTokenSource();
+        _sampleLoadCancellation = cancellation;
         try
         {
-            var path = Path.Combine(AppContext.BaseDirectory, "Assets", "Samples", sample.FileName);
-            Editor.LanguageId = sample.LanguageId;
-            Editor.DocumentUri = new Uri("file:///MonacoNativeDemo/" + sample.FileName);
-            Editor.Text = File.ReadAllText(path);
-            await Editor.FormatDocumentAsync(); // Built-in safe formatting on each sample switch.
-            ProfileReportHint.Text = string.Empty;
+            await _sampleLoadLock.WaitAsync(cancellation.Token);
+            try
+            {
+                cancellation.Token.ThrowIfCancellationRequested();
+                var path = ResolveSamplePath(sample);
+                if (sample.LanguageId == "typescript")
+                {
+                    // The host supplies module snapshots; the native service never crawls disk.
+                    var modulePath = Path.Combine(Path.GetDirectoryName(path)!, "demo.types.ts");
+                    var moduleText = await File.ReadAllTextAsync(modulePath, cancellation.Token);
+                    var package = Editor.Languages.Packages.Installed
+                        .OfType<MonacoNative.Language.TypeScript.TypeScriptLanguagePackage>().Single();
+                    package.Options.SetDocuments(new Dictionary<Uri, string>
+                    {
+                        [new Uri(modulePath)] = moduleText
+                    });
+                }
+                Editor.LanguageId = sample.LanguageId;
+                Editor.DocumentUri = new Uri(path);
+                Editor.Text = await File.ReadAllTextAsync(path, cancellation.Token);
+                // Source assets are already formatted. Do not mutate them using the demo's
+                // simplified formatter on every load; the Format button is explicit.
+                // Built-in providers execute directly in-process. Loading a sample must
+                // never locate, install or start a language server or a script runtime.
+                UpdateLanguageServiceStatus();
+                UpdateStatus();
+            }
+            finally { _sampleLoadLock.Release(); }
         }
+        catch (OperationCanceledException) { /* A newer sample load superseded this one. */ }
         catch (Exception ex)
         {
-            ProfileReportHint.Text = string.Format(Editor.GetLocalizedString("monacoNative.sample.loadError"), ex.Message);
+            if (!cancellation.IsCancellationRequested)
+                ProfileReportHint.Text = string.Format(Editor.GetLocalizedString("monacoNative.sample.loadError"), ex.Message);
         }
-        UpdateLanguageServiceStatus();
-        UpdateStatus();
+        finally
+        {
+            if (ReferenceEquals(_sampleLoadCancellation, cancellation)) _sampleLoadCancellation = null;
+            cancellation.Dispose();
+        }
     }
 
     private async void FormatSample_Click(object sender, RoutedEventArgs e)
@@ -128,8 +184,13 @@ public sealed partial class MainWindow : Window
         LanguageServiceStatus.Text = string.Format(CultureInfo.CurrentCulture,
             Editor.GetLocalizedString("monacoNative.sample.languageStatus"), Editor.LanguageId,
             Editor.GetLocalizedString(hasLexer ? "monacoNative.sample.highlightOn" : "monacoNative.sample.highlightOff"),
-            Editor.GetLocalizedString(Editor.LanguageServerBinding is null ?
-                "monacoNative.sample.lspDisconnected" : "monacoNative.sample.lspConnected"));
+            Editor.GetLocalizedString(GetNativePortStatus() switch
+            {
+                LanguageSourcePortStatus.InProcessUpstream => "monacoNative.sample.nativeInProcess",
+                LanguageSourcePortStatus.PartialPort => "monacoNative.sample.nativePartial",
+                LanguageSourcePortStatus.CompletePort => "monacoNative.sample.nativeComplete",
+                _ => "monacoNative.sample.nativeBaseline"
+            }));
     }
 
     private IEnumerable<ToggleMenuFlyoutItem> FeatureSwitches()
@@ -392,6 +453,6 @@ public sealed partial class MainWindow : Window
             $"MonacoNativeTestState;Length={Editor.Length};Version={Editor.VersionId};" +
             $"Cursor={Editor.PointerCursorState};Profile={(Editor.MethodProfilingEnabled ? "on" : "off")};" +
             $"Theme={Editor.RequestedTheme};Folds={Editor.AvailableFoldCount};Collapsed={Editor.CollapsedFoldCount};" +
-            $"Language={Editor.LanguageId};LSP={(Editor.LanguageServerBinding is null ? "off" : "on")}");
+            $"Language={Editor.LanguageId};Backend=Native;PortStatus={GetNativePortStatus()}");
     }
 }

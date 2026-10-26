@@ -1,0 +1,170 @@
+{
+  "format": 1,
+  "dependencies": {
+    "llvm": {
+      "repository": "https://github.com/llvm/llvm-project.git",
+      "revision": "6009708b4367171ccdbf4b5905cb6a803753fe18",
+      "version": "llvmorg-17.0.6",
+      "directory": "external/llvm-project",
+      "purpose": "Optional historical source reference/maintenance build only; application restore uses fixed libclang 17.0.4 runtime NuGet assets",
+      "license": "Apache-2.0 WITH LLVM-exception"
+    },
+    "roslyn": {
+      "repository": "https://github.com/dotnet/roslyn.git",
+      "revision": "5e3a11e2e7f952da93f9d35bd63a2fa181c0608b",
+      "version": "Microsoft.CodeAnalysis.CSharp.Features 4.11.0 source",
+      "directory": "external/roslyn",
+      "project": "src/Features/CSharp/Portable/Microsoft.CodeAnalysis.CSharp.Features.csproj",
+      "purpose": "Optional source review only; application always uses precompiled Microsoft.CodeAnalysis.CSharp.Features 4.11.0",
+      "license": "MIT"
+    },
+    "typescript": {
+      "repository": "https://github.com/microsoft/TypeScript.git",
+      "revision": "68cead182cc24afdc3f1ce7c8ff5853aba14b65a",
+      "version": "v5.8.3",
+      "directory": "external/typescript",
+      "purpose": "Source comparison and porting oracle ONLY; never run TypeScript/Node in the editor",
+      "license": "Apache-2.0"
+    }
+  },
+  "binaryDependencies": {
+    "Microsoft.CodeAnalysis.CSharp.Features": {
+      "version": "4.11.0",
+      "range": "[4.11.0]",
+      "runtime": "in-process .NET"
+    },
+    "libclang.runtime.win-x64": {
+      "version": "17.0.4",
+      "range": "[17.0.4]",
+      "runtime": "win-x64 native C API"
+    },
+    "libclang.runtime.win-arm64": {
+      "version": "17.0.4",
+      "range": "[17.0.4]",
+      "runtime": "win-arm64 native C API"
+    }
+  },
+  "additionalSourcePorts": [
+    {
+      "repository": "https://github.com/microsoft/node-jsonc-parser",
+      "tag": "v3.3.1",
+      "source": [
+        "src/impl/edit.ts"
+      ],
+      "translatedTests": [
+        "src/test/edit.test.ts",
+        "src/test/json.test.ts (scanner section only)"
+      ],
+      "target": "C#",
+      "verification": "managed execution not performed in delivery environment"
+    },
+    {
+      "repository": "https://github.com/microsoft/vscode-html-languageservice",
+      "tag": "v5.5.0",
+      "source": [
+        "src/services/htmlMatchingTagPosition.ts",
+        "src/services/htmlLinkedEditing.ts",
+        "src/services/htmlRename.ts",
+        "src/services/htmlFolding.ts"
+      ],
+      "translatedTests": [
+        "src/test/matchingTagPosition.test.ts",
+        "src/test/linkedEditing.test.ts",
+        "src/test/rename.test.ts",
+        "src/test/folding.test.ts (19 expected-result groups)"
+      ],
+      "target": "C#",
+      "verification": "managed execution not performed in delivery environment"
+    },
+    {
+      "repository": "https://github.com/microsoft/vscode-css-languageservice",
+      "tag": "v6.3.1",
+      "source": [
+        "src/parser/scssScanner.ts",
+        "src/parser/lessScanner.ts",
+        "src/services/cssFolding.ts"
+      ],
+      "translatedTests": [
+        "src/test/css/scanner.test.ts",
+        "src/test/less/scanner.test.ts",
+        "src/test/css/folding.test.ts (38 active expected-result groups, including SCSS/LESS)"
+      ],
+      "target": "C#",
+      "verification": "managed execution not performed in delivery environment"
+    },
+    {
+      "repository": "https://github.com/microsoft/TypeScript",
+      "tag": "v5.8.3",
+      "source": [
+        "src/compiler/scanner.ts (partial scanner; JSX/JSDoc/rescan/speculation APIs, conflict-marker trivia, unterminated regex recovery)",
+        "src/services/preProcess.ts",
+        "src/compiler/parser.ts (reference pragma branches used by preProcessFile)",
+        "src/services/signatureHelp.ts (argument index/count and rest-parameter highlight branches only)",
+        "src/services/outliningElementsCollector.ts (parseRegionDelimiter only)"
+      ],
+      "testData": "tests/LanguageTests/Fixtures/TypeScriptScanner.json",
+      "testImplementation": "tests/NativeAbiTests/UpstreamScannerTests.cpp",
+      "target": "C++",
+      "testKind": "201 committed differential fixtures, NOT a port of the entire TypeScript test harness",
+      "fixtureSha256": "d044dc24b84c5a3aa85c01e89c8b1745ccecb23aed9110ccd508d8976cedcad8",
+      "additionalTests": {
+        "file": "tests/NativeAbiTests/ScannerApiTests.cpp",
+        "kind": "121 fixed-oracle differential cases / 506 scanner states, plus host safety contracts; NOT upstream test-harness transcription",
+        "oracleVersion": "5.8.3",
+        "oracleSha256": "dd17428736a07e1db1a138d8a14295ddb2699ba780ee15038acdd2c6da5373a0",
+        "runtime": "C++ only",
+        "limitations": [
+          "No full TypeScript parser/binder/checker or JSX/TSX semantic service",
+          "No regex grammar/flag validation or comment-directive/JSDoc-leading-asterisk state",
+          "C++ exception-safe state restoration, validated bounded ranges and terminating trailing-hyphen loop are host adaptations"
+        ]
+      },
+      "dependencyPreprocessingTests": {
+        "file": "tests/NativeAbiTests/PreProcessTests.cpp",
+        "upstreamTest": "src/testRunner/unittests/services/preProcessFile.ts",
+        "upstreamAssertions": 41,
+        "additionalFrozenDifferentialCases": 228,
+        "hostSpanAndRecoveryContracts": 3,
+        "abiAndEditorContracts": 40,
+        "concurrentRequests": 32,
+        "malformedInputs": 512,
+        "oracleVersion": "5.8.3",
+        "oracleSha256": "dd17428736a07e1db1a138d8a14295ddb2699ba780ee15038acdd2c6da5373a0",
+        "testSourceSha256": "57efee8a6a0791eb1ebd56cf4a16c7db02918302d168fc324f42e7c0ed5c5839",
+        "runtime": "C++ only; no Node/Python dependency in this test runner",
+        "hostAdaptations": [
+          "Request-local scanner; bounded token count",
+          "Independent raw literal edit spans; upstream cooked-length UTF-16 metadata is unchanged",
+          "An empty single-quoted reference argument returns an empty name rather than reproducing an upstream TypeError",
+          "Path completion/definition uses supplied snapshots only; it is not the upstream full resolver or completion engine"
+        ],
+        "verification": "GCC Release and Clang Debug ASan/UBSan executed; managed bridge tests added but not executed; Windows not tested"
+      },
+      "basicEditingTests": {
+        "file": "tests/NativeAbiTests/BasicEditingTests.cpp",
+        "kind": "106 project-authored C++ regression cases, including a 128-input robustness loop; NOT upstream fourslash transcriptions",
+        "target": "basic single-file JS/TS editing; existing snapshot imports retained, complex package resolution not required",
+        "runtime": "C++ only",
+        "hostAdaptations": [
+          "Arrow/function-expression extraction and scope bounds",
+          "Arity-only signature selection, not upstream type-checker overload resolution",
+          "Token-based folds and lexical/unmatched-delimiter diagnostics, not full AST/syntax validation",
+          "Function completion can request the existing parameter-hints command"
+        ],
+        "verification": "GCC Release and Clang Debug ASan/UBSan builds and all 13 CTest entries executed; C#/WinUI tests not compiled or run"
+      }
+    },
+    {
+      "repository": "https://github.com/microsoft/vscode-json-languageservice",
+      "tag": "v5.4.1",
+      "source": [
+        "src/services/jsonFolding.ts"
+      ],
+      "translatedTests": [
+        "src/test/folding.test.ts (16 expected-result groups)"
+      ],
+      "target": "C#",
+      "verification": "managed execution not performed in delivery environment"
+    }
+  ]
+}

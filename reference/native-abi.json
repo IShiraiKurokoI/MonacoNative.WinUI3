@@ -131,5 +131,27 @@
     "mn_undo_selection": {
       "size64": 16
     }
+  },
+  "languageExtension": {
+    "version": 1,
+    "header": "MonacoNative.Language.Native.h",
+    "exports": [
+      "mn_language_abi_version",
+      "mn_language_free",
+      "mn_cpp_create",
+      "mn_cpp_destroy",
+      "mn_cpp_request",
+      "mn_typescript_request"
+    ],
+    "structs": {
+      "mn_language_document": {
+        "size64": 24,
+        "offsets64": {
+          "path": 0,
+          "utf8": 8,
+          "byte_length": 16
+        }
+      }
+    }
   }
 }

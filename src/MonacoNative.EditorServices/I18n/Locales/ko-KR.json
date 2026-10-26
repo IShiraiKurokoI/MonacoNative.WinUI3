@@ -123,7 +123,7 @@
   "monacoNative.sample.profileError": "프로파일 내보내기 실패: {0}",
   "monacoNative.sample.loadError": "예제를 읽을 수 없음: {0}",
   "monacoNative.sample.formatButton": "서식 지정",
-  "monacoNative.sample.languageStatus": "언어: {0}\n구문 강조: {1}\nLSP: {2}",
+  "monacoNative.sample.languageStatus": "언어: {0}\n구문 강조: {1}\nBackend: {2}",
   "monacoNative.sample.highlightOn": "활성",
   "monacoNative.sample.highlightOff": "등록되지 않음",
   "monacoNative.sample.lspConnected": "연결됨",
@@ -146,5 +146,10 @@
   "monacoNative.find.toggleReplace": "바꾸기 표시 / 숨기기",
   "monacoNative.sample.formatError": "서식 지정 실패: {0}",
   "monacoNative.find.selectTextFirst": "선택 영역에서 찾으려면 먼저 텍스트를 선택하세요.",
-  "monacoNative.find.invalidRegex": "잘못된 정규식"
+  "monacoNative.find.invalidRegex": "잘못된 정규식",
+  "monacoNative.sample.nativePartial": "네이티브: 부분 소스 이식",
+  "monacoNative.sample.nativeBaseline": "네이티브: 기본 구문만",
+  "monacoNative.sample.nativeComplete": "네이티브: 전체 소스 이식",
+  "monacoNative.sample.nativePortWarning": "소스 이식 버전: 외부 언어 서버를 실행하지 않습니다. C# Console 멤버 완성을 포함한 전체 의미 분석은 아직 이식되지 않았습니다.",
+  "monacoNative.sample.nativeInProcess": "프로세스 내 Roslyn 코어 (전체 소스 포팅 아님)"
 }

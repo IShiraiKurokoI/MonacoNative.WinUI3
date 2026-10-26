@@ -43,7 +43,7 @@ public sealed class StdioLspTransport : ILspTransport
     private readonly string? _workingDirectory;
     private readonly IReadOnlyDictionary<string, string?>? _environment;
     private Process? _process;
-    private Task<string>? _stderrTask;
+    private Task? _stderrTask;
 
     public StdioLspTransport(string fileName, IEnumerable<string>? arguments = null, string? workingDirectory = null,
         IReadOnlyDictionary<string, string?>? environment = null)
@@ -82,11 +82,16 @@ public sealed class StdioLspTransport : ILspTransport
         return ValueTask.CompletedTask;
     }
 
-    private async Task<string> DrainStderrAsync(Process process)
+    private async Task DrainStderrAsync(Process process)
     {
-        var text = await process.StandardError.ReadToEndAsync().ConfigureAwait(false);
-        if (!string.IsNullOrEmpty(text)) StandardErrorReceived?.Invoke(this, text);
-        return text;
+        var buffer = new char[2048];
+        while (true)
+        {
+            var count = await process.StandardError.ReadAsync(buffer.AsMemory()).ConfigureAwait(false);
+            if (count == 0) break;
+            try { StandardErrorReceived?.Invoke(this, new string(buffer, 0, count)); }
+            catch { /* Logging subscribers must not block the protocol transport. */ }
+        }
     }
 
     public async ValueTask StopAsync(CancellationToken cancellationToken = default)

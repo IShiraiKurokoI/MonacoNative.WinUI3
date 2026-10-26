@@ -28,6 +28,7 @@ public sealed partial class MonacoEditor
     private StackPanel? _contributionPopupContent;
     private Button? _lightBulbButton;
     private CancellationTokenSource? _contributionRefreshCts;
+    private Task? _contributionRefreshTask;
     // Reuse one UI-thread timer instead of allocating and canceling Task.Delay for every
     // selection movement (TaskCanceledException otherwise fires on every drag update).
     private readonly DispatcherTimer _contributionRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(70) };
@@ -48,6 +49,37 @@ public sealed partial class MonacoEditor
     private bool _inlineCompletionsEnabled = true;
     private bool _codeLensEnabled = true;
     private bool _stickyScrollEnabled = true;
+    private bool _suggestOnTypeEnabled = true;
+    private bool _suppressAutoSuggest;
+    private CancellationTokenSource? _suggestCts;
+    private Task? _suggestTask;
+    private readonly DispatcherTimer _suggestTimer = new() { Interval = TimeSpan.FromMilliseconds(160) };
+
+    private Border? _parameterHintsPopup;
+    private StackPanel? _parameterHintsContent;
+    private CancellationTokenSource? _parameterHintsCts;
+    private Task? _parameterHintsTask;
+    private readonly DispatcherTimer _parameterHintsTimer = new() { Interval = TimeSpan.FromMilliseconds(90) };
+    private long _parameterHintsRequestSequence;
+    private SignatureHelp? _activeParameterHelp;
+    private MonacoPosition _parameterHintsAnchor;
+    private bool _parameterHintsEnabled = true;
+    public bool ParameterHintsEnabled
+    {
+        get => _parameterHintsEnabled;
+        set { _parameterHintsEnabled = value; if (!value) HideParameterHints(); }
+    }
+
+    /// <summary>Show language completions while typing. Ctrl+Space remains available.</summary>
+    public bool SuggestOnTypeEnabled
+    {
+        get => _suggestOnTypeEnabled;
+        set
+        {
+            _suggestOnTypeEnabled = value;
+            if (!value) CancelAutomaticSuggestions();
+        }
+    }
 
     public event EventHandler<LanguageLocationRequestedEventArgs>? LanguageLocationRequested;
     public event EventHandler<WorkspaceTextEditRequestedEventArgs>? WorkspaceTextEditRequested;
@@ -108,6 +140,19 @@ public sealed partial class MonacoEditor
             },
         };
         ContributionLayer.Children.Add(_contributionPopup);
+        InitializeSuggestWidget();
+        _parameterHintsContent = new StackPanel { Spacing = 2 };
+        _parameterHintsPopup = new Border
+        {
+            Visibility = Visibility.Collapsed, CornerRadius = new CornerRadius(4),
+            BorderThickness = new Thickness(1), Padding = new Thickness(6),
+            MaxWidth = 540, MaxHeight = 240, IsHitTestVisible = false,
+            Child = _parameterHintsContent,
+        };
+        Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_parameterHintsPopup, "Parameter hints");
+        ContributionLayer.Children.Add(_parameterHintsPopup);
+        ApplyParameterHintsPalette();
+        _parameterHintsTimer.Tick += ParameterHintsTimer_Tick;
 
         _lightBulbButton = new Button
         {
@@ -121,6 +166,7 @@ public sealed partial class MonacoEditor
         _lightBulbButton.Click += async (_, _) => await ShowCodeActionsAsync();
         ContributionLayer.Children.Add(_lightBulbButton);
         RefreshContributionLocalization();
+        _suggestTimer.Tick += SuggestTimer_Tick;
     }
 
     private void RegisterContributionCommands()
@@ -190,10 +236,17 @@ public sealed partial class MonacoEditor
             "monacoNative.hideContributionWidget", "monacoNative.hideContributionWidget", "menu.category.editor", "editorTextFocus && contributionPopupVisible",
             () => { HideContributionPopup(); return ValueTask.CompletedTask; }, false, 0,
             Keys(new EditorKeybinding("Escape", 1000))));
+        _commands.Register(new EditorCommandDefinition(
+            "monacoNative.hideParameterHints", "editor.action.triggerParameterHints", "menu.category.editor",
+            "editorTextFocus && parameterHintsVisible && !suggestWidgetVisible",
+            () => { HideParameterHints(); return ValueTask.CompletedTask; }, false, 0,
+            Keys(new EditorKeybinding("Escape", 900))));
     }
 
     public void ShowFind(bool replace)
     {
+        HideParameterHints();
+        HideSuggestWidget();
         // Ctrl+F and Ctrl+H use the same widget; switching never discards the current query.
         var alreadyOpen = IsFindOpen;
         FindReplaceExpander.IsChecked = replace;
@@ -256,29 +309,86 @@ public sealed partial class MonacoEditor
         RefreshFindMatches(selectNearest: true);
     }
 
-    public async Task TriggerSuggestAsync(CancellationToken cancellationToken = default)
+    public Task TriggerSuggestAsync(CancellationToken cancellationToken = default)
     {
+        CancelAutomaticSuggestions();
+        return ShowSuggestionsAsync(new CompletionContext(CompletionTriggerKind.Invoke), automatic: false, cancellationToken);
+    }
+
+    private async Task ShowSuggestionsAsync(CompletionContext context, bool automatic, CancellationToken cancellationToken)
+    {
+        var request = ++_suggestRequestSequence;
+        var caret = _active;
+        var version = _model.VersionId;
+        var uri = DocumentUri; var language = LanguageId;
         var result = await _languages.ProvideCompletionItemsAsync(
-            _languageDocument,
-            ToLanguagePosition(_active),
-            new CompletionContext(CompletionTriggerKind.Invoke),
-            cancellationToken);
+            _languageDocument, ToLanguagePosition(caret), context, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_disposed || request != _suggestRequestSequence || version != _model.VersionId ||
+            !caret.Equals(_active) || uri != DocumentUri || language != LanguageId) return;
         if (result.Suggestions.Count == 0)
         {
-            HideContributionPopup();
+            HideSuggestWidget();
             return;
         }
+        _completionListIncomplete = result.IsIncomplete;
+        _completionListLine = caret.LineNumber;
+        _completionContinuationColumn = caret.Column;
+        _completionContinuationVersion = version;
+        ShowSuggestWidget(result.Suggestions, caret, version);
+    }
 
-        ShowAnchoredPopup(_active, "editor.action.triggerSuggest");
-        foreach (var item in result.Suggestions.Take(40))
-        {
-            var resolved = item;
-            AddPopupButton(CompletionLabel(item), async () =>
-            {
-                var providerItem = resolved;
-                await ApplyCompletionItemAsync(providerItem, cancellationToken);
-            });
-        }
+    private void ScheduleAutomaticSuggestions()
+    {
+        CancelAutomaticSuggestions();
+        if (!_suggestOnTypeEnabled || _suppressAutoSuggest || _disposed || !_loaded || _isReadOnly ||
+            !_languages.Languages.IsRegistered(_model.LanguageId) || _model.LanguageId == "plaintext") return;
+        // ModelChanged fires before the caller updates the caret; inspect the final caret
+        // when the timer fires rather than rejecting the first typed character here.
+        _suggestTimer.Interval = TimeSpan.FromMilliseconds(100);
+        _suggestTimer.Start();
+    }
+
+    private void CancelAutomaticSuggestions()
+    {
+        _suggestTimer.Stop();
+        _suggestCts?.Cancel();
+        _suggestCts?.Dispose();
+        _suggestCts = null;
+    }
+
+    private void SuggestTimer_Tick(object? sender, object e)
+    {
+        _suggestTimer.Stop();
+        if (!_suggestOnTypeEnabled || _disposed || !_loaded || _isReadOnly) return;
+        var row = Math.Clamp(_active.LineNumber, 1, checked((int)_model.LineCount));
+        var line = _model.GetLineContent(row);
+        var offset = Math.Clamp(_active.Column - 1, 0, line.Length);
+        if (offset <= 0) return;
+        var last = line[offset - 1];
+        var trigger = last.ToString();
+        var isServerTrigger = _languages.IsCompletionTriggerCharacter(_languageDocument, trigger);
+        // On '.' still request semantic completion from an attached server even when
+        // it did not advertise the character as a dedicated trigger. Never fabricate
+        // members from the offline keyword provider when no server is attached.
+        var semanticMemberAccess = last == '.' && _lspBinding is not null;
+        if (!isServerTrigger && !semanticMemberAccess && !char.IsLetterOrDigit(last) &&
+            last is not ('_' or '$' or '<' or ':' or '/' or '"' or '-'))
+            return;
+        var context = isServerTrigger
+            ? new CompletionContext(CompletionTriggerKind.TriggerCharacter, trigger)
+            : new CompletionContext(_completionListIncomplete && _completionListLine == row
+                ? CompletionTriggerKind.TriggerForIncompleteCompletions : CompletionTriggerKind.Invoke);
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.ShutdownToken);
+        _suggestCts = cts;
+        _suggestTask = _lifetime.Track(ShowAutomaticSuggestionsAsync(context, cts.Token));
+    }
+
+    private async Task ShowAutomaticSuggestionsAsync(CompletionContext context, CancellationToken cancellationToken)
+    {
+        try { await ShowSuggestionsAsync(context, automatic: true, cancellationToken); }
+        catch (OperationCanceledException) { }
+        catch { /* Optional language providers must not fail the editor's input loop. */ }
     }
 
     public async Task ShowHoverAsync(MonacoPosition position, CancellationToken cancellationToken = default)
@@ -296,33 +406,145 @@ public sealed partial class MonacoEditor
             AddPopupText(content.Value);
     }
 
-    public async Task TriggerParameterHintsAsync(CancellationToken cancellationToken = default)
+    public Task TriggerParameterHintsAsync(CancellationToken cancellationToken = default)
     {
-        var help = await _languages.ProvideSignatureHelpAsync(
-            _languageDocument,
-            ToLanguagePosition(_active),
-            new SignatureHelpContext(SignatureHelpTriggerKind.Invoke),
-            cancellationToken);
-        if (help is null || help.Signatures.Count == 0)
-        {
-            HideContributionPopup();
-            return;
-        }
+        CancelParameterHintsRequest();
+        _parameterHintsCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.ShutdownToken);
+        return ShowParameterHintsAsync(new SignatureHelpContext(SignatureHelpTriggerKind.Invoke), _parameterHintsCts.Token);
+    }
 
-        var signatureIndex = Math.Clamp(help.ActiveSignature, 0, help.Signatures.Count - 1);
-        var signature = help.Signatures[signatureIndex];
-        ShowAnchoredPopup(_active, "editor.action.triggerParameterHints");
-        AddPopupText(signature.Label, emphasized: true);
-        if (!string.IsNullOrWhiteSpace(signature.Documentation))
-            AddPopupText(signature.Documentation!);
-        if (signature.Parameters is { Count: > 0 })
+    private void CancelParameterHintsRequest()
+    {
+        ++_parameterHintsRequestSequence;
+        _parameterHintsTimer.Stop();
+        _parameterHintsCts?.Cancel();
+        _parameterHintsCts?.Dispose();
+        _parameterHintsCts = null;
+    }
+
+    private void HideParameterHints()
+    {
+        CancelParameterHintsRequest();
+        _activeParameterHelp = null;
+        if (_parameterHintsPopup?.Visibility != Visibility.Visible) return;
+        _parameterHintsPopup.Visibility = Visibility.Collapsed;
+        _parameterHintsContent?.Children.Clear();
+        _commands.SetContext("parameterHintsVisible", false);
+    }
+
+    private void ScheduleAutomaticParameterHints(bool retriggerOnly = false)
+    {
+        CancelParameterHintsRequest();
+        if (!_parameterHintsEnabled || _disposed || !_loaded || _isReadOnly || _textInput?.IsComposing == true)
+        { HideParameterHints(); return; }
+        if (retriggerOnly && _activeParameterHelp is null) return;
+        _parameterHintsTimer.Start();
+    }
+
+    private void ParameterHintsTimer_Tick(object? sender, object e)
+    {
+        _parameterHintsTimer.Stop();
+        if (!_parameterHintsEnabled || _disposed || !_loaded || _textInput?.IsComposing == true) return;
+        var row = Math.Clamp(_active.LineNumber, 1, checked((int)_model.LineCount));
+        var line = _model.GetLineContent(row);
+        var column = Math.Clamp(_active.Column - 1, 0, line.Length);
+        var character = column > 0 ? line[column - 1].ToString() : string.Empty;
+        var trigger = _languages.IsSignatureHelpTriggerCharacter(_languageDocument, character);
+        var retrigger = _activeParameterHelp is not null;
+        if (!trigger && !retrigger) return;
+        var kind = trigger || (retrigger && _languages.IsSignatureHelpRetriggerCharacter(_languageDocument, character))
+            ? SignatureHelpTriggerKind.TriggerCharacter : SignatureHelpTriggerKind.ContentChange;
+        _parameterHintsCts = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.ShutdownToken);
+        _parameterHintsTask = _lifetime.Track(ShowAutomaticParameterHintsAsync(new SignatureHelpContext(kind,
+            kind == SignatureHelpTriggerKind.TriggerCharacter ? character : null, retrigger, _activeParameterHelp), _parameterHintsCts.Token));
+    }
+
+    private async Task ShowAutomaticParameterHintsAsync(SignatureHelpContext context, CancellationToken cancellationToken)
+    {
+        try { await ShowParameterHintsAsync(context, cancellationToken); }
+        catch (OperationCanceledException) { }
+        catch { if (!cancellationToken.IsCancellationRequested) HideParameterHints(); }
+    }
+
+    private async Task ShowParameterHintsAsync(SignatureHelpContext context, CancellationToken cancellationToken)
+    {
+        var request = ++_parameterHintsRequestSequence;
+        var caret = _active;
+        var version = _model.VersionId;
+        var uri = DocumentUri;
+        var language = LanguageId;
+        var help = await _languages.ProvideSignatureHelpAsync(_languageDocument, ToLanguagePosition(caret), context, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_disposed || !_loaded || request != _parameterHintsRequestSequence || version != _model.VersionId ||
+            !caret.Equals(_active) || uri != DocumentUri || language != LanguageId || _textInput?.IsComposing == true) return;
+        if (help is null || help.Signatures.Count == 0)
+        { HideParameterHints(); return; }
+        if (_parameterHintsPopup is null || _parameterHintsContent is null) return;
+        _activeParameterHelp = help;
+        _parameterHintsAnchor = caret;
+        _parameterHintsContent.Children.Clear();
+        var selected = Math.Clamp(help.ActiveSignature, 0, help.Signatures.Count - 1);
+        var signature = help.Signatures[selected];
+        void Text(string text, bool emphasized = false) => _parameterHintsContent.Children.Add(new TextBlock
         {
-            var parameterIndex = Math.Clamp(signature.ActiveParameter ?? help.ActiveParameter, 0, signature.Parameters.Count - 1);
-            var parameter = signature.Parameters[parameterIndex];
-            AddPopupText($"{parameterIndex + 1}/{signature.Parameters.Count}  {parameter.Label}", emphasized: true);
-            if (!string.IsNullOrWhiteSpace(parameter.Documentation))
-                AddPopupText(parameter.Documentation!);
+            Text = text, TextWrapping = TextWrapping.Wrap, MaxWidth = 500,
+            Foreground = new SolidColorBrush(_suggestForeground),
+            FontFamily = new FontFamily("Consolas"),
+            FontWeight = emphasized ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal,
+            Margin = new Thickness(4, 2, 4, 2),
+        });
+        Text((help.Signatures.Count > 1 ? $"{selected + 1}/{help.Signatures.Count}  " : string.Empty) + signature.Label, true);
+        if (!string.IsNullOrWhiteSpace(signature.Documentation)) Text(signature.Documentation!);
+        if (signature.Parameters is { Count: > 0 } parameters)
+        {
+            var index = signature.ActiveParameter ?? help.ActiveParameter;
+            // Out-of-range is an intentional upstream sentinel: do not falsely
+            // highlight the last parameter for an extra argument or middle rest.
+            if (index >= 0 && index < parameters.Count)
+            {
+                Text($"{index + 1}/{parameters.Count}  {parameters[index].Label}", true);
+                if (!string.IsNullOrWhiteSpace(parameters[index].Documentation)) Text(parameters[index].Documentation!);
+            }
         }
+        ApplyParameterHintsPalette();
+        _parameterHintsPopup.Visibility = Visibility.Visible;
+        _commands.SetContext("parameterHintsVisible", true);
+        PositionParameterHints();
+        // No Focus(), no HideSuggestWidget(): parameter hints and completion may coexist.
+    }
+
+    private void ApplyParameterHintsPalette()
+    {
+        if (_parameterHintsPopup is null) return;
+        _parameterHintsPopup.Background = _suggestPopup?.Background ?? Brush(255, 37, 37, 38);
+        _parameterHintsPopup.BorderBrush = _suggestPopup?.BorderBrush ?? Brush(255, 69, 69, 69);
+        if (_parameterHintsContent is not null)
+            foreach (var block in _parameterHintsContent.Children.OfType<TextBlock>())
+                block.Foreground = new SolidColorBrush(_suggestForeground);
+    }
+
+    private void PositionParameterHints()
+    {
+        if (_parameterHintsPopup?.Visibility != Visibility.Visible) return;
+        var width = Math.Max(120, Math.Min(540, ActualWidth - GutterWidth - 8));
+        _parameterHintsPopup.MaxWidth = width;
+        _parameterHintsPopup.Measure(new Size(width, 240));
+        var height = Math.Min(240, _parameterHintsPopup.DesiredSize.Height);
+        var point = GetViewportPoint(_parameterHintsAnchor, belowLine: false);
+        var x = Math.Clamp(point.X, GutterWidth, Math.Max(GutterWidth, ActualWidth - width - 4));
+        var y = point.Y - height - 4;
+        if (y < 4)
+        {
+            y = point.Y + _lineHeight + 4;
+            if (IsSuggestWidgetVisible && _suggestPopup is not null)
+            {
+                var suggestTop = Canvas.GetTop(_suggestPopup);
+                var suggestHeight = _suggestPopup.ActualHeight > 0 ? _suggestPopup.ActualHeight : _suggestPopup.DesiredSize.Height;
+                y = Math.Max(y, suggestTop + suggestHeight + 4);
+            }
+        }
+        Canvas.SetLeft(_parameterHintsPopup, x);
+        Canvas.SetTop(_parameterHintsPopup, Math.Clamp(y, 4, Math.Max(4, ActualHeight - height - 4)));
     }
 
     public async Task TriggerRenameAsync(CancellationToken cancellationToken = default)
@@ -544,35 +766,82 @@ public sealed partial class MonacoEditor
         await Task.CompletedTask;
     }
 
+    /// <summary>Choose insertion (default) or full replacement for LSP InsertReplaceEdit.</summary>
+    public bool SuggestReplaceMode { get; set; }
+
     private async Task ApplyCompletionItemAsync(CompletionItem item, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var range = item.Range is null ? GetWordRangeAtCaret() : ToMonacoRange(item.Range.Value.Normalize());
-        if (item.AdditionalTextEdits is { Count: > 0 })
+        if (_isReadOnly || _disposed) return;
+        var version = _model.VersionId;
+        var uri = DocumentUri; var language = LanguageId;
+        var caret = _active;
+        if (item.Resolve is not null)
         {
-            var edits = new List<LanguageTextEdit>(item.AdditionalTextEdits)
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(5));
+            try { item = await item.Resolve(timeout.Token); }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            { if (item.RequireResolvedEdit) return; }
+            // A delayed resolver must never apply edits to a newer document/caret.
+            if (_disposed || _isReadOnly || version != _model.VersionId || caret != _active || uri != DocumentUri || language != LanguageId) return;
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        if (item.RequireResolvedEdit) return;
+        var selectedRange = SuggestReplaceMode ? item.ReplaceRange ?? item.Range : item.InsertRange ?? item.Range;
+        var range = selectedRange is null ? GetWordRangeAtCaret() : ToMonacoRange(selectedRange.Value.Normalize());
+        var start = checked((int)_model.GetOffsetAt(new MonacoPosition(range.StartLineNumber, range.StartColumn)));
+        var end = checked((int)_model.GetOffsetAt(new MonacoPosition(range.EndLineNumber, range.EndColumn)));
+        var raw = AdjustCompletionIndentation(item.SnippetText ?? item.InsertText ?? item.Label, range, item.InsertTextMode);
+        var expansion = item.SnippetText is null ? null : SnippetParser.Parse(raw, SnippetVariables());
+        var text = expansion?.Text ?? raw;
+        var edits = new List<(int Start, int End, string Text, bool Main)> { (start, end, text, true) };
+        foreach (var edit in item.AdditionalTextEdits ?? Array.Empty<LanguageTextEdit>())
+        {
+            var r = edit.Range.Normalize();
+            edits.Add((checked((int)_model.GetOffsetAt(new MonacoPosition(r.StartLineNumber, r.StartColumn))),
+                checked((int)_model.GetOffsetAt(new MonacoPosition(r.EndLineNumber, r.EndColumn))), edit.Text, false));
+        }
+        var ordered = edits.OrderBy(e => e.Start).ThenBy(e => e.End).ToArray();
+        for (var i = 1; i < ordered.Length; i++)
+            if (ordered[i].Start < ordered[i - 1].End || ordered[i].Start == ordered[i - 1].Start)
+                throw new InvalidOperationException("Completion edits overlap; no changes were applied.");
+        var insertionStart = start + edits.Where(e => !e.Main && e.End <= start).Sum(e => e.Text.Length - (e.End - e.Start));
+        _suppressAutoSuggest = true;
+        try
+        {
+            if (expansion is not null || edits.Count > 1) CancelSnippetSession();
+            using var transaction = _model.BeginUndoTransaction();
+            try
             {
-                new(ToLanguageRange(range), item.InsertText ?? item.Label),
-            };
-            ApplyLanguageTextEdits(edits);
+                foreach (var edit in ordered.Reverse()) _model.Replace((nuint)edit.Start, (nuint)edit.End, edit.Text);
+                _anchor = _active = _model.GetPositionAt((nuint)(insertionStart + text.Length));
+                FlushSnippetMirrors();
+                if (expansion is not null) StartSnippetSession(expansion, insertionStart);
+                else if (item.CaretOffset is { } cursor)
+                    _anchor = _active = _model.GetPositionAt((nuint)(insertionStart + Math.Clamp(cursor, 0, text.Length)));
+                transaction.Complete();
+            }
+            catch { transaction.Rollback(); CancelSnippetSession(); throw; }
+            AfterProjectionChanged(true);
+            OnSelectionChanged();
+            HideContributionPopup();
+            if (item.CommandId == "editor.action.triggerSuggest") await TriggerSuggestAsync(cancellationToken);
+            else if (item.CommandId == "editor.action.triggerParameterHints") await TriggerParameterHintsAsync(cancellationToken);
+            else if (item.Command is not null) await item.Command(cancellationToken);
+            Focus(FocusState.Programmatic);
         }
-        else
-        {
-            ReplaceRangeAndMoveCaret(range, item.InsertText ?? item.Label);
-        }
-        if (item.Command is not null) await item.Command(cancellationToken);
-        HideContributionPopup();
-        Focus(FocusState.Programmatic);
+        finally { _suppressAutoSuggest = false; }
     }
 
-    private void ReplaceRangeAndMoveCaret(MonacoRange range, string text)
+    private void ReplaceRangeAndMoveCaret(MonacoRange range, string text, int? caretOffset = null)
     {
         if (_isReadOnly) return;
         var start = _model.GetOffsetAt(Normalize(range.StartLineNumber, range.StartColumn));
         var end = _model.GetOffsetAt(Normalize(range.EndLineNumber, range.EndColumn));
         if (end < start) (start, end) = (end, start);
         _model.Replace(start, end, text ?? string.Empty);
-        var target = start + (nuint)(text?.Length ?? 0);
+        var target = start + (nuint)Math.Clamp(caretOffset ?? (text?.Length ?? 0), 0, text?.Length ?? 0);
         _anchor = _active = _model.GetPositionAt(target <= _model.Length ? target : _model.Length);
         AfterProjectionChanged(true);
         OnSelectionChanged();
@@ -614,6 +883,8 @@ public sealed partial class MonacoEditor
 
     private void ShowAnchoredPopup(MonacoPosition anchor, string titleKey)
     {
+        HideParameterHints();
+        HideSuggestWidget();
         if (_contributionPopup is null || _contributionPopupContent is null) return;
         _contributionPopupContent.Children.Clear();
         AddPopupText(Local(titleKey), emphasized: true);
@@ -727,9 +998,9 @@ public sealed partial class MonacoEditor
         // Cancellation applies only to *running provider operations*, not to queued delays.
         _contributionRefreshCts?.Cancel();
         _contributionRefreshCts?.Dispose();
-        var source = new CancellationTokenSource();
+        var source = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.ShutdownToken);
         _contributionRefreshCts = source;
-        _ = RefreshContributionStateAsync(full, source.Token);
+        _contributionRefreshTask = _lifetime.Track(RefreshContributionStateAsync(full, source.Token));
     }
 
     private async Task RefreshContributionStateAsync(bool full, CancellationToken cancellationToken)
@@ -877,19 +1148,42 @@ public sealed partial class MonacoEditor
         return value;
     }
 
-    private void OnContributionsSelectionChanged() => ScheduleContributionRefresh(full: false);
+    private void OnContributionsSelectionChanged()
+    {
+        CancelAutomaticSuggestions();
+        ScheduleAutomaticParameterHints(retriggerOnly: true);
+        var continuation = _completionListIncomplete && _completionContinuationVersion == _model.VersionId &&
+            _active.LineNumber == _completionListLine && _active.Column == _completionContinuationColumn;
+        HideSuggestWidget(preserveCompletionSession: continuation);
+        ScheduleContributionRefresh(full: false);
+    }
 
     private void OnContributionsModelChanged()
     {
         using var methodSample = _methodProfiler.Measure("OnContributionsModelChanged");
         ClearInlineCompletion(updateProjection: false);
+        HideSuggestWidget(preserveCompletionSession: true);
         ScheduleContributionRefresh(full: true);
+        // ModelChanged fires before the edit's final caret update. Queue suggestions after
+        // the selection transaction, otherwise OnSelectionChanged immediately cancels them.
+        var editVersion = _model.VersionId;
+        if (!_suppressAutoSuggest && _textInput?.IsComposing != true)
+            _ = DispatcherQueue.TryEnqueue(() =>
+            {
+                if (!_disposed && _model.VersionId == editVersion)
+                {
+                    ScheduleAutomaticSuggestions();
+                    ScheduleAutomaticParameterHints();
+                }
+            });
         if (!_findBulkEdit && FindWidget.Visibility == Visibility.Visible)
             RefreshFindMatches(selectNearest: false);
     }
 
     private void OnContributionsViewportChanged()
     {
+        PositionSuggestWidget();
+        PositionParameterHints();
         PositionCodeLensControls();
         UpdateStickyScroll();
         if (_lightBulbButton?.Visibility == Visibility.Visible)
@@ -1114,8 +1408,21 @@ public sealed partial class MonacoEditor
         a.LineNumber != b.LineNumber ? a.LineNumber.CompareTo(b.LineNumber) : a.Column.CompareTo(b.Column);
     private static MonacoRange ToMonacoRange(LanguageRange range) => new(range.StartLineNumber, range.StartColumn, range.EndLineNumber, range.EndColumn);
 
+    private Task[] GetPendingBackgroundOperations()
+    {
+        return new[]
+        {
+            _nativeDiagnosticsTask, _foldingRefreshTask, _lspRefreshTask,
+            _contributionRefreshTask, _suggestTask, _parameterHintsTask
+        }.Where(task => task is { IsCompleted: false }).Cast<Task>().Distinct().ToArray();
+    }
+
     private void DisposeContributions()
     {
+        HideParameterHints();
+        _parameterHintsTimer.Tick -= ParameterHintsTimer_Tick;
+        CancelAutomaticSuggestions();
+        _suggestTimer.Tick -= SuggestTimer_Tick;
         _contributionRefreshTimer.Stop();
         _contributionRefreshTimer.Tick -= ContributionRefreshTimer_Tick;
         _contributionRefreshCts?.Cancel();
@@ -1123,6 +1430,7 @@ public sealed partial class MonacoEditor
         _contributionRefreshCts = null;
         ClearInlineCompletion(updateProjection: false);
         ClearCodeLensControls();
+        HideSuggestWidget();
         HideContributionPopup();
     }
 }

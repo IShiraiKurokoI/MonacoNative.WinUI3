@@ -1,5 +1,6 @@
 #include "TestHarness.h"
 #include "MonacoNative.Core.Native.h"
+#include "MonacoNative.Language.Native.h"
 
 #include <array>
 #include <cstddef>
@@ -475,6 +476,34 @@ namespace
         mn_keybinding_destroy(service);
     }
 
+    void NativeTypeScriptLanguageAbi()
+    {
+        MN_CHECK_EQ(mn_language_abi_version(), 1U);
+        MN_CHECK_EQ(sizeof(mn_language_document), sizeof(void*) * 3);
+        const std::string source = "class Item { title: string; run(count: number, text: string): void {} } const item = new Item(); item.";
+        const mn_language_document document{"native-test.ts", source.data(), source.size()};
+        char* result = nullptr;
+        MN_CHECK_EQ(mn_typescript_request(&document, 1, MN_LANGUAGE_COMPLETION, source.size(), &result), 1);
+        MN_CHECK(result != nullptr);
+        const std::string completion(result);
+        mn_language_free(result);
+        MN_CHECK(completion.find("\"label\":\"title\"") != std::string::npos);
+        MN_CHECK(completion.find("run(${1:count}, ${2:text})$0") != std::string::npos);
+        MN_CHECK_EQ(mn_typescript_request(&document, 1, MN_LANGUAGE_TOKENS, 0, &result), 1);
+        MN_CHECK(result != nullptr);
+        const std::string tokens(result);
+        mn_language_free(result);
+        MN_CHECK(tokens.find("\"kind\":86") != std::string::npos); // Upstream ClassKeyword.
+        MN_CHECK_EQ(mn_typescript_request(nullptr, 0, MN_LANGUAGE_COMPLETION, 0, &result), 0);
+        MN_CHECK(result != nullptr);
+        mn_language_free(result);
+        result = nullptr;
+        MN_CHECK_EQ(mn_cpp_request(nullptr, &document, 1, nullptr, 0, MN_LANGUAGE_COMPLETION, 0, &result), 0);
+        MN_CHECK(result != nullptr);
+        mn_language_free(result);
+        mn_language_free(nullptr);
+    }
+
     void NullHandleContract()
     {
         MN_CHECK_EQ(mn_model_length(nullptr), 0U);
@@ -500,6 +529,12 @@ namespace
 // Each case can run in a fresh process. On Windows this prevents shared
 // process state from masking defects in later cases, and a hung ABI call now
 // identifies the exact contract case in CTest rather than stalling for 25 min.
+void TypeScriptUpstreamScannerFixtures();
+void TypeScriptScannerApiFixtures();
+void TypeScriptPreProcessFixtures();
+void TypeScriptDependencyIntegrationFixtures();
+void TypeScriptBasicEditingFixtures();
+
 int main(int argc, char* argv[])
 {
     std::cerr << "[ABI] main() reached; native DLL loaded\n" << std::flush;
@@ -509,7 +544,7 @@ int main(int argc, char* argv[])
         const char* name;
         void (*run)();
     };
-    constexpr std::array<Case, 15> cases{{
+    constexpr std::array<Case, 21> cases{{
         {"version", "current native ABI version and layout", AbiVersionContract},
         {"lifetime", "lifetime and properties", LifetimeAndBasicProperties},
         {"copy", "copy APIs and truncation", CopyApisAndTruncation},
@@ -525,6 +560,12 @@ int main(int argc, char* argv[])
         {"unicode", "unicode segmentation ABI", UnicodeSegmentationAbi},
         {"keybinding", "keybinding ABI", KeybindingAbi},
         {"null", "null-handle contract", NullHandleContract},
+        {"typescript_scanner_api", "TypeScript scanner API oracle and host contracts", TypeScriptScannerApiFixtures},
+        {"typescript_basic", "TypeScript basic editing and adapted upstream algorithms", TypeScriptBasicEditingFixtures},
+        {"typescript_dependencies", "TypeScript dependency ABI and editor integration", TypeScriptDependencyIntegrationFixtures},
+        {"typescript_preprocess", "TypeScript upstream dependency preprocessing", TypeScriptPreProcessFixtures},
+        {"typescript_upstream", "TypeScript upstream scanner fixtures", TypeScriptUpstreamScannerFixtures},
+        {"native_language", "native TypeScript and language ABI ownership", NativeTypeScriptLanguageAbi},
     }};
 
     if (argc != 1 && (argc != 3 || std::string_view(argv[1]) != "--case"))

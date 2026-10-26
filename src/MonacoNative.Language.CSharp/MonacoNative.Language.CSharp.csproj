@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>true</IsPackable>
+    <PackageId>MonacoNative.Language.CSharp</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>MonacoNative</Authors>
+    <Description>In-process Roslyn CSharp semantic services for MonacoNative. No language-server process; not a vendored full-source port.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MonacoNative.Language\MonacoNative.Language.csproj" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Features" Version="[4.11.0]" />
+  </ItemGroup>
+</Project>

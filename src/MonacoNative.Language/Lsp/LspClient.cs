@@ -32,6 +32,8 @@ public sealed class LspClient : IAsyncDisposable
     {
         get { lock (_diagnosticsGate) return new Dictionary<Uri, LspDiagnosticsEventArgs>(_diagnostics); }
     }
+    /// <summary>Host-supplied settings for workspace/configuration requests (null if not configured).</summary>
+    public Func<Uri?, string?, CancellationToken, ValueTask<object?>>? ConfigurationProvider { get; set; }
     public event EventHandler<LspDiagnosticsEventArgs>? DiagnosticsPublished;
     public event EventHandler<LspLogMessageEventArgs>? LogMessageReceived;
     public event EventHandler<LspNotificationEventArgs>? NotificationReceived;
@@ -133,7 +135,22 @@ public sealed class LspClient : IAsyncDisposable
         textDocument = new
         {
             synchronization = new { dynamicRegistration = false, willSave = false, willSaveWaitUntil = false, didSave = false },
-            completion = new { dynamicRegistration = false, completionItem = new { snippetSupport = false, documentationFormat = new[] { "markdown", "plaintext" } } },
+            completion = new
+            {
+                dynamicRegistration = false, contextSupport = true,
+                completionItem = new
+                {
+                    snippetSupport = true, commitCharactersSupport = false, // TSF commit-character interception is not advertised.
+                    deprecatedSupport = true,
+                    preselectSupport = true, insertReplaceSupport = true, labelDetailsSupport = true,
+                    documentationFormat = new[] { "markdown", "plaintext" },
+                    tagSupport = new { valueSet = new[] { 1 } },
+                    insertTextModeSupport = new { valueSet = new[] { 1, 2 } },
+                    resolveSupport = new { properties = new[] { "documentation", "detail", "additionalTextEdits", "command" } },
+                },
+                completionItemKind = new { valueSet = Enumerable.Range(1, 25).ToArray() },
+                completionList = new { itemDefaults = new[] { "commitCharacters", "editRange", "insertTextFormat", "insertTextMode", "data" } },
+            },
             hover = new { dynamicRegistration = false, contentFormat = new[] { "markdown", "plaintext" } },
             signatureHelp = new { dynamicRegistration = false, signatureInformation = new { documentationFormat = new[] { "markdown", "plaintext" }, parameterInformation = new { labelOffsetSupport = true }, activeParameterSupport = true } },
             definition = new { dynamicRegistration = false, linkSupport = true },
@@ -196,10 +213,21 @@ public sealed class LspClient : IAsyncDisposable
         {
             case "workspace/configuration":
             {
-                var count = parameters.HasValue && parameters.Value.ValueKind == JsonValueKind.Object &&
-                    parameters.Value.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array
-                    ? items.GetArrayLength() : 0;
-                return JsonSerializer.SerializeToElement(Enumerable.Repeat<object?>(null, count).ToArray(), JsonOptions.Default);
+                if (!parameters.HasValue || parameters.Value.ValueKind != JsonValueKind.Object ||
+                    !parameters.Value.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
+                    return JsonSerializer.SerializeToElement(Array.Empty<object?>(), JsonOptions.Default);
+                var values = new List<object?>();
+                foreach (var item in items.EnumerateArray())
+                {
+                    Uri? scope = null;
+                    if (item.TryGetProperty("scopeUri", out var scopeValue) && scopeValue.ValueKind == JsonValueKind.String)
+                        Uri.TryCreate(scopeValue.GetString(), UriKind.Absolute, out scope);
+                    var section = item.TryGetProperty("section", out var sectionValue) && sectionValue.ValueKind == JsonValueKind.String
+                        ? sectionValue.GetString() : null;
+                    values.Add(ConfigurationProvider is null ? null :
+                        await ConfigurationProvider(scope, section, cancellationToken).ConfigureAwait(false));
+                }
+                return JsonSerializer.SerializeToElement(values, JsonOptions.Default);
             }
             case "workspace/workspaceFolders":
                 return JsonSerializer.SerializeToElement(
@@ -233,7 +261,7 @@ public sealed class LspClient : IAsyncDisposable
         {
             if (State == LspClientState.Initialized)
             {
-                try { await ShutdownAsync(CancellationToken.None).ConfigureAwait(false); }
+                try { using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3)); await ShutdownAsync(timeout.Token).ConfigureAwait(false); }
                 catch { }
             }
             if (_rpc is not null)

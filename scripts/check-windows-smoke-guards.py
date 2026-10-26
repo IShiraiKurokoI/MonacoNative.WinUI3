@@ -4,6 +4,7 @@
 Windows ABI CTest executables must have their DLL staged beside them; a
 missing-DLL GUI can block a headless runner before the test's main(). The
 Core-only package consumer must not activate the transitive WindowsAppSDK UI.
+Required language integration must not silently skip missing native dependencies.
 """
 
 from pathlib import Path
@@ -99,7 +100,36 @@ def main() -> None:
         require("invoke-headless-renderer.ps1" in content and "dotnet run --project" not in content,
                 f"{name} must directly run its EXE through the watchdog")
 
-    print("Windows headless smoke guards OK: ABI DLL staging, WinAppSDK runtime, noninteractive Win2D probes, watchdog and logs")
+    # Strict language acceptance is separate from optional unit-only runs.
+    language_runner = (ROOT / "scripts/test-language-integration.ps1").read_text(encoding="utf-8")
+    require("--require-native --require-libclang" in language_runner,
+            "Windows language acceptance must require both native dependencies")
+    require("dotnet build $project" in language_runner and "-r $rid" in language_runner,
+            "Windows language acceptance must test RID-specific NuGet outputs")
+    require("Remove-Item -LiteralPath $output" in language_runner,
+            "Clear dedicated language-test outputs so stale libraries cannot mask failed deployment")
+    require("No global LLVM installation is used as a fallback" in language_runner,
+            "NuGet deployment tests must not silently consume a globally installed LLVM")
+    require("$env:MONACONATIVE_NATIVE_LIBRARY = $oldNative" in language_runner and
+            "$env:MONACONATIVE_LIBCLANG = $oldClang" in language_runner,
+            "Language test overrides must be restored after the strict test run")
+    required_step = "run: ./scripts/test-language-integration.ps1 -Configuration Release -Platform x64"
+    require(required_step in workflow, "Windows CI must invoke required language acceptance")
+    require(workflow.index("run: ./scripts/test-core.ps1 -Configuration Release -BuildOnly") <
+            workflow.index(required_step), "Windows CI must build native dependencies first")
+    require('MONACONATIVE_NATIVE_LIBRARY="$PWD/build/src/MonacoNative.Core.Native/libMonacoNative.Core.Native.so" '
+            'dotnet run --project tests/LanguageTests/MonacoNative.Language.Tests.csproj -c Release -- --require-native' in workflow,
+            "Linux GCC acceptance must not skip its built native bridge")
+    language_tests = (ROOT / "tests/LanguageTests/Program.cs").read_text(encoding="utf-8")
+    require("IntegrationRequirements.Parse(args)" in language_tests and
+            "requirements.Validate(Environment.GetEnvironmentVariable, File.Exists)" in language_tests,
+            "Required dependency preflight must run before language tests")
+    require(language_tests.index("requirements.Validate(Environment.GetEnvironmentVariable, File.Exists)") <
+            language_tests.index("await Tests.RunAsync();"), "Validate dependencies before optional skip branches")
+    require("IntegrationRequirementsRegression();" in language_tests,
+            "Required/optional/invalid argument cases must remain in the existing managed test suite")
+
+    print("Windows headless smoke guards OK: ABI DLL staging, WinAppSDK runtime, noninteractive Win2D probes, watchdog, logs and required language acceptance")
 
 
 if __name__ == "__main__":

@@ -8,6 +8,33 @@ internal static class Program
 
     public static int Main()
     {
+        Run("IntelliSense selection: arrow wrapping, paging, empty list", () =>
+        {
+            var state = new SuggestionSelection();
+            state.Reset(4);
+            Equal(0, state.SelectedIndex);
+            state.Move(-1);
+            Equal(3, state.SelectedIndex);
+            state.Move(1);
+            Equal(0, state.SelectedIndex);
+            state.Move(2);
+            Equal(2, state.SelectedIndex);
+            state.Page(9);
+            Equal(3, state.SelectedIndex);
+            state.Page(-9);
+            Equal(0, state.SelectedIndex);
+            state.Select(1);
+            Equal(1, state.SelectedIndex);
+            state.Select(99);
+            Equal(1, state.SelectedIndex);
+            state.Reset(0);
+            state.Move(1);
+            Equal(-1, state.SelectedIndex);
+            state.Reset(1);
+            state.Move(-9);
+            Equal(0, state.SelectedIndex);
+        });
+
         Run("cursor policy: text, gutter, overview, minimap, outside, overlays", () =>
         {
             static EditorPointerCursorKind At(double x, double y, bool overlay = false, bool minimap = true) =>

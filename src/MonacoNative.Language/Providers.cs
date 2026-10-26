@@ -12,7 +12,11 @@ public sealed record CompletionContext(CompletionTriggerKind TriggerKind = Compl
 public sealed record CompletionItem(string Label, CompletionItemKind Kind = CompletionItemKind.Text, string? Detail = null,
     string? Documentation = null, string? InsertText = null, string? SortText = null, string? FilterText = null,
     LanguageRange? Range = null, IReadOnlyList<LanguageTextEdit>? AdditionalTextEdits = null,
-    Func<CancellationToken, ValueTask>? Command = null);
+    Func<CancellationToken, ValueTask>? Command = null, int? CaretOffset = null,
+    string? SnippetText = null, LanguageRange? InsertRange = null, LanguageRange? ReplaceRange = null,
+    bool Preselect = false, bool Deprecated = false, IReadOnlyList<string>? CommitCharacters = null,
+    string? LabelDetail = null, string? LabelDescription = null, int InsertTextMode = 1,
+    Func<CancellationToken, ValueTask<CompletionItem>>? Resolve = null, string? CommandId = null, bool RequireResolvedEdit = false);
 public sealed record CompletionList(IReadOnlyList<CompletionItem> Suggestions, bool IsIncomplete = false);
 
 public interface ICompletionItemProvider

@@ -4,9 +4,19 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <DefineConstants>$(DefineConstants);MONACONATIVE_BINARY_TESTS</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\MonacoNative.Language\MonacoNative.Language.csproj" />
-    <Compile Include="..\..\src\MonacoNative.SampleApp\DemoSampleFormattingProvider.cs" Link="DemoSampleFormattingProvider.cs" />
+    <ProjectReference Include="..\..\src\MonacoNative.Language.Json\MonacoNative.Language.Json.csproj" />
+    <ProjectReference Include="..\..\src\MonacoNative.Language.Html\MonacoNative.Language.Html.csproj" />
+    <ProjectReference Include="..\..\src\MonacoNative.Language.Css\MonacoNative.Language.Css.csproj" />
+    <ProjectReference Include="..\..\src\MonacoNative.Language.TypeScript\MonacoNative.Language.TypeScript.csproj" />
+    <ProjectReference Include="..\..\src\MonacoNative.Language.CSharp\MonacoNative.Language.CSharp.csproj" />
+    <ProjectReference Include="..\..\src\MonacoNative.Language.Cpp\MonacoNative.Language.Cpp.csproj" />
+    <Compile Include="..\..\packaging\buildTransitive\MonacoNative.NativeBinaryCheck.cs" Link="NativeBinaryInspector.cs" />
   </ItemGroup>
+  <!-- Portable unit tests remain RID-less. Strict Windows integration selects a RID. -->
+  <Import Project="..\..\packaging\buildTransitive\MonacoNative.ClangRuntime.targets"
+          Condition="'$(RuntimeIdentifier)' == 'win-x64' or '$(RuntimeIdentifier)' == 'win-arm64'" />
 </Project>

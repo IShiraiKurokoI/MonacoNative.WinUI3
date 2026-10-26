@@ -1,4 +1,4 @@
-add_executable(MonacoNative.NativeAbi.Tests main.cpp)
+add_executable(MonacoNative.NativeAbi.Tests main.cpp UpstreamScannerTests.cpp ScannerApiTests.cpp PreProcessTests.cpp BasicEditingTests.cpp)
 target_link_libraries(MonacoNative.NativeAbi.Tests PRIVATE MonacoNative.Core.Native)
 target_include_directories(MonacoNative.NativeAbi.Tests PRIVATE
     ${PROJECT_SOURCE_DIR}/src/MonacoNative.Core.Native
@@ -26,7 +26,7 @@ if(WIN32)
     # Version is a canary for loader/runtime initialization. If even this
     # contract cannot run, skip the dependent cases instead of timing out all
     # thirteen processes. Never hide the initial failing test.
-    foreach(case_id IN ITEMS version lifetime copy editing search language view view_null undo diff unicode keybinding null)
+    foreach(case_id IN ITEMS version lifetime copy editing search word language view view_null undo undo_cursor diff unicode keybinding null native_language typescript_upstream typescript_scanner_api typescript_preprocess typescript_dependencies typescript_basic)
         set(test_name "MonacoNative.NativeAbi.${case_id}.Tests")
         add_test(NAME "${test_name}" COMMAND MonacoNative.NativeAbi.Tests --case "${case_id}")
         if(case_id STREQUAL "version")

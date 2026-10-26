@@ -14,6 +14,8 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <RepoRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\'))</RepoRoot>
+    <MonacoNativeValidateCore>true</MonacoNativeValidateCore>
+    <MonacoNativeValidationDependsOn>CopyNativeCore</MonacoNativeValidationDependsOn>
     <NativeCoreDll>$(RepoRoot)artifacts\native\$(Platform)\$(Configuration)\MonacoNative.Core.Native.dll</NativeCoreDll>
   </PropertyGroup>
   <ItemGroup>
@@ -29,12 +31,21 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
-    <!-- SDK-style projects compile all **/*.cs; demo.cs must remain a content asset only. -->
-    <Compile Remove="Assets\Samples\**\*.cs" />
+    <!-- demo.cs is compiled into this existing project so Roslyn can resolve .NET members. -->
     <Content Include="Assets\Samples\*.*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
-  <Target Name="CopyNativeCore" AfterTargets="Build">
+  <Target Name="CopyNativeCore" AfterTargets="Build" Condition="'$(DesignTimeBuild)' != 'true'">
     <Error Condition="!Exists('$(NativeCoreDll)')" Text="Native core DLL not found at $(NativeCoreDll)." />
     <Copy SourceFiles="$(NativeCoreDll)" DestinationFolder="$(OutDir)" />
   </Target>
+  <!-- Include the native DLL in publish output, not just the normal build folder. -->
+  <Target Name="IncludeNativeCoreForPublish" AfterTargets="ComputeFilesToPublish"
+          Condition="'$(DesignTimeBuild)' != 'true'">
+    <Error Condition="!Exists('$(NativeCoreDll)')" Text="Native core DLL not found at $(NativeCoreDll). Build the selected platform before publishing with --no-build." />
+    <ItemGroup>
+      <ResolvedFileToPublish Include="$(NativeCoreDll)" RelativePath="MonacoNative.Core.Native.dll"
+                             CopyToPublishDirectory="PreserveNewest" />
+    </ItemGroup>
+  </Target>
+  <Import Project="..\..\packaging\buildTransitive\MonacoNative.ClangRuntime.targets" />
 </Project>

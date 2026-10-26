@@ -123,7 +123,7 @@
   "monacoNative.sample.profileError": "レポートの出力失敗：{0}",
   "monacoNative.sample.loadError": "サンプルを開けません：{0}",
   "monacoNative.sample.formatButton": "整形",
-  "monacoNative.sample.languageStatus": "言語：{0}\n字句強調表示：{1}\nLSP：{2}",
+  "monacoNative.sample.languageStatus": "言語：{0}\n字句強調表示：{1}\nバックエンド：{2}",
   "monacoNative.sample.highlightOn": "有効",
   "monacoNative.sample.highlightOff": "未登録",
   "monacoNative.sample.lspConnected": "接続済み",
@@ -146,5 +146,10 @@
   "monacoNative.find.toggleReplace": "置換を表示 / 非表示",
   "monacoNative.sample.formatError": "整形に失敗しました：{0}",
   "monacoNative.find.selectTextFirst": "範囲内検索の前にテキストを選択してください。",
-  "monacoNative.find.invalidRegex": "無効な正規表現"
+  "monacoNative.find.invalidRegex": "無効な正規表現",
+  "monacoNative.sample.nativePartial": "ネイティブ：一部のソース移植",
+  "monacoNative.sample.nativeBaseline": "ネイティブ：基本構文のみ",
+  "monacoNative.sample.nativeComplete": "ネイティブ：完全なソース移植",
+  "monacoNative.sample.nativePortWarning": "ソース移植版：外部言語サーバーは起動しません。C# Console のメンバー補完を含む完全な意味解析は未移植です。",
+  "monacoNative.sample.nativeInProcess": "プロセス内 Roslyn コア（完全なソース移植ではありません）"
 }

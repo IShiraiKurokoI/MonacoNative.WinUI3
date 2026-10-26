@@ -13,5 +13,6 @@
     <Compile Include="..\..\src\MonacoNative.Renderer.WinUI3\EditorFoldingRanges.cs" Link="EditorFoldingRanges.cs" />
     <Compile Include="..\..\src\MonacoNative.Renderer.WinUI3\EditorMethodProfiler.cs" Link="EditorMethodProfiler.cs" />
     <Compile Include="..\..\src\MonacoNative.Renderer.WinUI3\EditorFindEngine.cs" Link="EditorFindEngine.cs" />
+    <Compile Include="..\..\src\MonacoNative.Renderer.WinUI3\SuggestionSelection.cs" Link="SuggestionSelection.cs" />
   </ItemGroup>
 </Project>

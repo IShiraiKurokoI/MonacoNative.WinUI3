@@ -105,5 +105,90 @@ assert '=> _lastHighContrast\n' not in language
 unqualified = re.search(r'(?<!Microsoft\.UI\.Dispatching\.)\bDispatcherQueuePriority\.', source)
 assert unqualified is None, 'DispatcherQueuePriority must be unambiguous'
 # Static XML parse succeeds for both resource dictionaries and editor template.
+# IntelliSense must be a dedicated, keyboard-driven overlay, not the generic button popup.
+suggest = (renderer / 'MonacoEditor.SuggestWidget.cs').read_text(encoding='utf-8')
+assert 'InitializeSuggestWidget()' in contributions
+assert 'ShowSuggestWidget(result.Suggestions, caret, version)' in contributions
+assert 'new Button' not in suggest, 'Suggest items must not steal focus via Buttons'
+assert 'new ScrollViewer' in suggest and 'SuggestionSelection' in suggest
+assert 'SuggestKindSymbol(item.Kind)' in suggest and 'AppendLabelWithMatchHighlight' in suggest
+assert 'PositionSuggestWidget()' in contributions
+assert '_suggestDocumentVersion' in suggest and '_suggestRequestSequence' in contributions
+assert '_textInput?.IsComposing == true' in suggest
+assert 'VirtualKey.Up' in suggest and 'VirtualKey.Down' in suggest
+assert 'VirtualKey.Enter' in suggest and 'VirtualKey.Tab' in suggest
+assert 'VirtualKey.Escape' in suggest and 'e.Handled = true' in suggest
+assert 'CommitSelectedSuggestionAsync' in suggest
+assert 'ViewportHeight' in suggest and 'SuggestOverscanRows' in suggest
+assert 'HasMouseActuallyMoved(e)' in suggest, 'Stationary pointer must not replace keyboard suggestion selection'
+assert '_lastObservedMousePosition' in source and '_hasObservedMousePosition' in source
+assert 'ApplySuggestWidgetPalette(highContrast, theme)' in source
+keydown = source[source.index('private async void Editor_KeyDown'):source.index('private void Editor_KeyUp')]
+assert keydown.index('TryHandleKeyDown(') < keydown.index('TryHandleSuggestWidgetKeyDown(e)') < keydown.index('ResolveAndExecuteAsync('), 'TSF before suggest before default movement'
+assert 'if (!_suppressAutoSuggest && _textInput?.IsComposing != true)' in contributions
 assert app is not None
-print('PASS: Find/Replace, opacity, routed input, themes, transactional resize, fast selection, view option commits')
+# Completion metadata, snippet routing and font-free upstream vectors.
+snippets = (renderer / 'MonacoEditor.Snippets.cs').read_text(encoding='utf-8')
+ranking = (root / 'src/MonacoNative.Language/CompletionRanking.cs').read_text(encoding='utf-8')
+adapter = (root / 'src/MonacoNative.Language/Lsp/LspLanguageAdapter.cs').read_text(encoding='utf-8')
+icons = (renderer / 'CodiconPresenter.cs').read_text(encoding='utf-8')
+assert keydown.index('TryHandleSuggestWidgetKeyDown(e)') < keydown.index('TryHandleSnippetKeyDown(e)') < keydown.index('ResolveAndExecuteAsync(')
+assert 'ObserveEdit' in snippets and 'GetLinkedEdits' in snippets and 'BeginUndoTransaction' in snippets
+assert 'StartSnippetSession(expansion, insertionStart)' in contributions
+assert 'insertionStart = start + edits.Where' in contributions
+assert 'Completion edits overlap' in contributions
+assert 'completionItem/resolve' in adapter and 'itemDefaults' in adapter and 'SnippetText' in (root / 'src/MonacoNative.Language/Providers.cs').read_text()
+assert 'CodiconPresenter.Create(item.Kind' in suggest and 'XamlReader.Load' in icons
+assert 'Symbol' in suggest and 'Segoe MDL2' not in suggest
+assert 'CompletionFuzzyScore.Match' in ranking and 'WordDistance' in ranking and '_prefixMemory' in ranking
+assert 'TrackIncompleteCompletionEdit(e)' in source
+assert 'commitCharactersSupport = false' in (root / 'src/MonacoNative.Language/Lsp/LspClient.cs').read_text()
+assert 'editor.action.triggerParameterHints' in contributions
+for suffix in ('.ttf', '.otf', '.woff', '.woff2'):
+    assert not list(root.rglob('*' + suffix)), 'No font files in source delivery'
+# Native folding providers must be called using an immutable snapshot and discard stale results.
+folding = (renderer / 'MonacoEditor.Folding.cs').read_text(encoding='utf-8')
+service = (root / 'src/MonacoNative.Language/LanguageService.cs').read_text(encoding='utf-8')
+assert 'LanguageModelSnapshot.Capture(_languageDocument)' in folding
+assert 'ProvideFoldingRangesAsync(snapshot' in folding and 'Task.Run(' in folding
+assert 'snapshot.Matches(_languageDocument)' in folding and 'ReferenceEquals(_foldingCts, source)' in folding
+assert 'if (provided is null)' in folding, 'Empty provider output must not be replaced by heuristic ranges'
+assert 'CancelFoldingRefresh();' in source
+assert 'RegisterFoldingRangeProvider' in service and 'if (result is not null) return result' in service
+for package in ('Json', 'Html', 'Css'):
+    content = (root / f'src/MonacoNative.Language.{package}/{package}LanguagePackage.cs').read_text(encoding='utf-8')
+    assert 'RegisterFoldingRangeProvider' in content
+assert 'Folding();' in (root / 'tests/LanguageTests/UpstreamPortTests.cs').read_text(encoding='utf-8')
+assert 'ScannerApiTests.cpp' in (root / 'tests/NativeAbiTests/CMakeLists.txt').read_text(encoding='utf-8')
+print('PASS: editor, snippet, ranking, vector and native folding-provider source guards')
+
+# Independent parameter hints: triggers and async guards, without focus stealing.
+hints = contributions[contributions.index('private async Task ShowParameterHintsAsync'):contributions.index('private void ApplyParameterHintsPalette')]
+assert '_parameterHintsRequestSequence' in hints and 'version != _model.VersionId' in hints
+assert 'uri != DocumentUri' in hints and 'language != LanguageId' in hints and '!caret.Equals(_active)' in hints
+hints_code = re.sub(r'//[^\n]*', '', hints)
+assert 'HideSuggestWidget(' not in hints_code and 'Focus(' not in hints_code
+assert 'IsSignatureHelpTriggerCharacter' in contributions and 'IsSignatureHelpRetriggerCharacter' in contributions
+assert '_parameterHintsTimer.Tick -= ParameterHintsTimer_Tick' in contributions
+lifetime = (root / 'src/MonacoNative.Renderer.WinUI3/EditorLifetime.cs').read_text(encoding='utf-8')
+assert 'EditorLifetime _lifetime' in source and 'ShutdownGracePeriod' in source and '_lifetime.DrainAsync' in source
+assert 'BeginShutdown()' in source and '_lifetime.BeginShutdown()' in source
+assert 'Task Track(Task task)' in lifetime and 'BeginShutdown()' in lifetime and 'DrainAsync(TimeSpan timeout)' in lifetime
+for tracked in ('_suggestTask = _lifetime.Track', '_parameterHintsTask = _lifetime.Track', '_contributionRefreshTask = _lifetime.Track'):
+    assert tracked in contributions
+assert '_foldingRefreshTask = _lifetime.Track' in folding
+assert '_nativeDiagnosticsTask = _lifetime.Track' in (root / 'src/MonacoNative.Renderer.WinUI3/MonacoEditor.Language.cs').read_text(encoding='utf-8')
+assert '_lspRefreshTask = _lifetime.Track' in (root / 'src/MonacoNative.Renderer.WinUI3/MonacoEditor.Lsp.cs').read_text(encoding='utf-8')
+for partial in ('MonacoEditor.Contributions.cs', 'MonacoEditor.Folding.cs', 'MonacoEditor.Language.cs', 'MonacoEditor.Lsp.cs'):
+    text = (root / f'src/MonacoNative.Renderer.WinUI3/{partial}').read_text(encoding='utf-8')
+    assert '_lifetime.ShutdownToken' in text
+assert 'await Editor.DisposeAsync();' in sample
+assert '_closing = true;' in sample and '_sampleLoadCancellation?.Cancel()' in sample[sample.index('Closed +='):sample.index('InitializeMenuOptions()')]
+lsp_session = (root / 'src/MonacoNative.Language/Lsp/LspDocumentSession.cs').read_text(encoding='utf-8')
+async_dispose = lsp_session[lsp_session.index('public async ValueTask DisposeAsync()'):]
+assert '_disposeCts.Cancel();' not in async_dispose.split('}', 1)[0], 'Async LSP disposal should drain rather than cancel the worker'
+assert 'ScheduleAutomaticParameterHints();' in contributions
+assert 'parameterHintsVisible && !suggestWidgetVisible' in contributions
+assert 'RegisterSignatureHelpProvider' in (root / 'src/MonacoNative.Language.TypeScript/TypeScriptLanguagePackage.cs').read_text()
+assert 'BasicEditingTests.cpp' in (root / 'tests/NativeAbiTests/CMakeLists.txt').read_text()
+print('PASS: parameter-hints triggers, lifecycle and stale-result guards')

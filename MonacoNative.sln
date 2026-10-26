@@ -30,12 +30,48 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MonacoNative.Lsp.Tests", "t
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "MonacoNative.WinRT.Component", "src\MonacoNative.WinRT.Component\MonacoNative.WinRT.Component.vcxproj", "{D91D0C54-62D3-45F0-A0EE-1F9D8B7CF311}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MonacoNative.Language.Json", "src\MonacoNative.Language.Json\MonacoNative.Language.Json.csproj", "{9A07E135-3C00-57B2-9DB4-5F78F17D4286}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MonacoNative.Language.Html", "src\MonacoNative.Language.Html\MonacoNative.Language.Html.csproj", "{27687B76-A8A2-5A4E-9F89-0108BA29168E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MonacoNative.Language.Css", "src\MonacoNative.Language.Css\MonacoNative.Language.Css.csproj", "{532BA632-8F24-5349-ADC9-1C3747F34F54}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MonacoNative.Language.TypeScript", "src\MonacoNative.Language.TypeScript\MonacoNative.Language.TypeScript.csproj", "{74022D59-D55D-5BF6-90D2-A12EBFC81421}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MonacoNative.Language.CSharp", "src\MonacoNative.Language.CSharp\MonacoNative.Language.CSharp.csproj", "{881E3B08-7421-5DB7-869E-2B84D66CC5A5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MonacoNative.Language.Cpp", "src\MonacoNative.Language.Cpp\MonacoNative.Language.Cpp.csproj", "{BFAC565E-5A24-582E-B1B9-3D312F9176E0}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
 		Release|x64 = Release|x64
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{9A07E135-3C00-57B2-9DB4-5F78F17D4286}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{9A07E135-3C00-57B2-9DB4-5F78F17D4286}.Debug|x64.Build.0 = Debug|Any CPU
+		{9A07E135-3C00-57B2-9DB4-5F78F17D4286}.Release|x64.ActiveCfg = Release|Any CPU
+		{9A07E135-3C00-57B2-9DB4-5F78F17D4286}.Release|x64.Build.0 = Release|Any CPU
+		{27687B76-A8A2-5A4E-9F89-0108BA29168E}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{27687B76-A8A2-5A4E-9F89-0108BA29168E}.Debug|x64.Build.0 = Debug|Any CPU
+		{27687B76-A8A2-5A4E-9F89-0108BA29168E}.Release|x64.ActiveCfg = Release|Any CPU
+		{27687B76-A8A2-5A4E-9F89-0108BA29168E}.Release|x64.Build.0 = Release|Any CPU
+		{532BA632-8F24-5349-ADC9-1C3747F34F54}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{532BA632-8F24-5349-ADC9-1C3747F34F54}.Debug|x64.Build.0 = Debug|Any CPU
+		{532BA632-8F24-5349-ADC9-1C3747F34F54}.Release|x64.ActiveCfg = Release|Any CPU
+		{532BA632-8F24-5349-ADC9-1C3747F34F54}.Release|x64.Build.0 = Release|Any CPU
+		{74022D59-D55D-5BF6-90D2-A12EBFC81421}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{74022D59-D55D-5BF6-90D2-A12EBFC81421}.Debug|x64.Build.0 = Debug|Any CPU
+		{74022D59-D55D-5BF6-90D2-A12EBFC81421}.Release|x64.ActiveCfg = Release|Any CPU
+		{74022D59-D55D-5BF6-90D2-A12EBFC81421}.Release|x64.Build.0 = Release|Any CPU
+		{881E3B08-7421-5DB7-869E-2B84D66CC5A5}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{881E3B08-7421-5DB7-869E-2B84D66CC5A5}.Debug|x64.Build.0 = Debug|Any CPU
+		{881E3B08-7421-5DB7-869E-2B84D66CC5A5}.Release|x64.ActiveCfg = Release|Any CPU
+		{881E3B08-7421-5DB7-869E-2B84D66CC5A5}.Release|x64.Build.0 = Release|Any CPU
+		{BFAC565E-5A24-582E-B1B9-3D312F9176E0}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{BFAC565E-5A24-582E-B1B9-3D312F9176E0}.Debug|x64.Build.0 = Debug|Any CPU
+		{BFAC565E-5A24-582E-B1B9-3D312F9176E0}.Release|x64.ActiveCfg = Release|Any CPU
+		{BFAC565E-5A24-582E-B1B9-3D312F9176E0}.Release|x64.Build.0 = Release|Any CPU
 
 		{4C5C33A0-8F1B-4D60-BB16-0124E1390B72}.Debug|x64.ActiveCfg = Debug|x64
 		{4C5C33A0-8F1B-4D60-BB16-0124E1390B72}.Debug|x64.Build.0 = Debug|x64

@@ -52,16 +52,20 @@ public sealed class MonacoLanguageService
     private readonly ProviderRegistry<IDocumentFormattingEditProvider> _formatting = new();
     private readonly ProviderRegistry<IDocumentRangeFormattingEditProvider> _rangeFormatting = new();
     private readonly ProviderRegistry<IDocumentSemanticTokensProvider> _semanticTokens = new();
+    private readonly ProviderRegistry<IDocumentDiagnosticsProvider> _documentDiagnostics = new();
+    private readonly ProviderRegistry<IFoldingRangeProvider> _folding = new();
     private readonly object _diagnosticsGate = new();
     private readonly Dictionary<Uri, IReadOnlyList<LanguageDiagnostic>> _diagnostics = new();
 
     public MonacoLanguageService(bool registerBuiltins = true)
     {
         Languages = new LanguageRegistry();
-        if (registerBuiltins) BuiltinLanguages.RegisterDefaults(this);
+        Packages = new LanguagePackageCollection(this);
+        if (registerBuiltins) Packages.Install(new PlainTextLanguagePackage());
     }
 
     public LanguageRegistry Languages { get; }
+    public LanguagePackageCollection Packages { get; }
     public event EventHandler<LanguageDiagnosticsChangedEventArgs>? DiagnosticsChanged;
 
     public IDisposable Register(LanguageExtensionPoint language) => Languages.Register(language);
@@ -70,7 +74,40 @@ public sealed class MonacoLanguageService
     public IDisposable SetMonarchTokensProvider(string languageId, MonarchLanguage definition) => Languages.SetMonarchTokensProvider(languageId, definition);
     public int Score(LanguageSelector selector, Uri uri, string languageId) => LanguageSelectorScore.Score(selector, uri, languageId);
 
+    public IDisposable RegisterFoldingRangeProvider(LanguageSelector selector, IFoldingRangeProvider provider) => _folding.Register(selector, provider);
+    public bool HasFoldingRangeProvider(ILanguageTextModel model) => _folding.Matching(model).Count > 0;
+
+    public async ValueTask<IReadOnlyList<LanguageFoldingRange>?> ProvideFoldingRangesAsync(
+        ILanguageTextModel model, FoldingContext? context = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(model);
+        cancellationToken.ThrowIfCancellationRequested();
+        model = LanguageModelSnapshot.Capture(model);
+        var options = context ?? new FoldingContext();
+        if (options.RangeLimit is < 0) throw new ArgumentOutOfRangeException(nameof(context), "RangeLimit cannot be negative.");
+        foreach (var provider in _folding.Matching(model))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var result = await provider.ProvideFoldingRangesAsync(model, options, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (result is not null) return result;
+        }
+        return null;
+    }
+
     public IDisposable RegisterCompletionItemProvider(LanguageSelector selector, ICompletionItemProvider provider) => _completion.Register(selector, provider);
+
+    /// <summary>Use registered native-provider trigger characters rather than a hard-coded punctuation list.</summary>
+    public bool IsCompletionTriggerCharacter(ILanguageTextModel model, string character) =>
+        !string.IsNullOrEmpty(character) && _completion.Matching(model).Any(provider =>
+            provider.TriggerCharacters.Contains(character, StringComparer.Ordinal));
+
+    public bool IsSignatureHelpTriggerCharacter(ILanguageTextModel model, string character) =>
+        !string.IsNullOrEmpty(character) && _signature.Matching(model).Any(provider =>
+            provider.SignatureHelpTriggerCharacters.Contains(character, StringComparer.Ordinal));
+    public bool IsSignatureHelpRetriggerCharacter(ILanguageTextModel model, string character) =>
+        !string.IsNullOrEmpty(character) && _signature.Matching(model).Any(provider =>
+            provider.SignatureHelpRetriggerCharacters.Contains(character, StringComparer.Ordinal));
     public IDisposable RegisterHoverProvider(LanguageSelector selector, IHoverProvider provider) => _hover.Register(selector, provider);
     public IDisposable RegisterSignatureHelpProvider(LanguageSelector selector, ISignatureHelpProvider provider) => _signature.Register(selector, provider);
     public IDisposable RegisterInlayHintsProvider(LanguageSelector selector, IInlayHintsProvider provider) => _inlay.Register(selector, provider);
@@ -84,6 +121,21 @@ public sealed class MonacoLanguageService
     public IDisposable RegisterDocumentFormattingEditProvider(LanguageSelector selector, IDocumentFormattingEditProvider provider) => _formatting.Register(selector, provider);
     public IDisposable RegisterDocumentRangeFormattingEditProvider(LanguageSelector selector, IDocumentRangeFormattingEditProvider provider) => _rangeFormatting.Register(selector, provider);
     public IDisposable RegisterDocumentSemanticTokensProvider(LanguageSelector selector, IDocumentSemanticTokensProvider provider) => _semanticTokens.Register(selector, provider);
+
+    public IDisposable RegisterDocumentDiagnosticsProvider(LanguageSelector selector, IDocumentDiagnosticsProvider provider) => _documentDiagnostics.Register(selector, provider);
+    public bool HasDiagnosticsProvider(ILanguageTextModel model) => _documentDiagnostics.Matching(model).Count > 0;
+    public async ValueTask<IReadOnlyList<LanguageDiagnostic>> ProvideDiagnosticsAsync(ILanguageTextModel model, CancellationToken cancellationToken = default)
+    {
+        model = LanguageModelSnapshot.Capture(model);
+        var output = new List<LanguageDiagnostic>();
+        foreach (var provider in _documentDiagnostics.Matching(model))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var diagnostics = await provider.ProvideDiagnosticsAsync(model, cancellationToken).ConfigureAwait(false);
+            if (diagnostics is not null) output.AddRange(diagnostics);
+        }
+        return output;
+    }
 
     public void SetDiagnostics(Uri uri, IReadOnlyList<LanguageDiagnostic>? diagnostics, int? version = null)
     {
@@ -123,22 +175,40 @@ public sealed class MonacoLanguageService
 
     public async ValueTask<CompletionList> ProvideCompletionItemsAsync(ILanguageTextModel model, LanguagePosition position, CompletionContext context, CancellationToken cancellationToken = default)
     {
+        model = LanguageModelSnapshot.Capture(model);
         Languages.Encounter(model.LanguageId);
         var suggestions = new List<CompletionItem>();
         var incomplete = false;
-        foreach (var provider in _completion.Matching(model))
+        // Native semantic providers and explicit host providers are authoritative. A syntax-only
+        // fallback must not pollute their results or mask a deliberately empty response.
+        var providers = _completion.Matching(model);
+        var answered = false;
+        foreach (var provider in providers.Where(p => p is not IFallbackCompletionProvider))
         {
             cancellationToken.ThrowIfCancellationRequested();
             var result = await provider.ProvideCompletionItemsAsync(model, position, context, cancellationToken).ConfigureAwait(false);
             if (result is null) continue;
-            suggestions.AddRange(result.Suggestions);
+            answered = true;
+            suggestions.AddRange(result.Suggestions.Select(item => item.Resolve is not null ? item :
+                item with { Resolve = ct => provider.ResolveCompletionItemAsync(item, ct) }));
             incomplete |= result.IsIncomplete;
         }
+        if (!answered)
+            foreach (var provider in providers.Where(p => p is IFallbackCompletionProvider))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var result = await provider.ProvideCompletionItemsAsync(model, position, context, cancellationToken).ConfigureAwait(false);
+                if (result is null) continue;
+                suggestions.AddRange(result.Suggestions.Select(item => item.Resolve is not null ? item :
+                item with { Resolve = ct => provider.ResolveCompletionItemAsync(item, ct) }));
+                incomplete |= result.IsIncomplete;
+            }
         return new CompletionList(suggestions, incomplete);
     }
 
     public async ValueTask<Hover?> ProvideHoverAsync(ILanguageTextModel model, LanguagePosition position, CancellationToken cancellationToken = default)
     {
+        model = LanguageModelSnapshot.Capture(model);
         Languages.Encounter(model.LanguageId);
         var contents = new List<MarkdownString>();
         LanguageRange? range = null;
@@ -155,6 +225,7 @@ public sealed class MonacoLanguageService
 
     public async ValueTask<SignatureHelp?> ProvideSignatureHelpAsync(ILanguageTextModel model, LanguagePosition position, SignatureHelpContext context, CancellationToken cancellationToken = default)
     {
+        model = LanguageModelSnapshot.Capture(model);
         Languages.Encounter(model.LanguageId);
         foreach (var provider in _signature.Matching(model))
         {
@@ -167,6 +238,7 @@ public sealed class MonacoLanguageService
 
     public async ValueTask<IReadOnlyList<InlayHint>> ProvideInlayHintsAsync(ILanguageTextModel model, LanguageRange range, CancellationToken cancellationToken = default)
     {
+        model = LanguageModelSnapshot.Capture(model);
         Languages.Encounter(model.LanguageId);
         var output = new List<InlayHint>();
         foreach (var provider in _inlay.Matching(model))
@@ -180,6 +252,7 @@ public sealed class MonacoLanguageService
 
     public async ValueTask<IReadOnlyList<CodeAction>> ProvideCodeActionsAsync(ILanguageTextModel model, LanguageRange range, CodeActionContext context, CancellationToken cancellationToken = default)
     {
+        model = LanguageModelSnapshot.Capture(model);
         Languages.Encounter(model.LanguageId);
         var output = new List<CodeAction>();
         foreach (var provider in _codeAction.Matching(model))
@@ -193,6 +266,7 @@ public sealed class MonacoLanguageService
 
     public async ValueTask<IReadOnlyList<LanguageLocation>> ProvideReferencesAsync(ILanguageTextModel model, LanguagePosition position, ReferenceContext context, CancellationToken cancellationToken = default)
     {
+        model = LanguageModelSnapshot.Capture(model);
         Languages.Encounter(model.LanguageId);
         var output = new List<LanguageLocation>();
         foreach (var provider in _reference.Matching(model))
@@ -206,6 +280,7 @@ public sealed class MonacoLanguageService
 
     public async ValueTask<RenameLocation?> ResolveRenameLocationAsync(ILanguageTextModel model, LanguagePosition position, CancellationToken cancellationToken = default)
     {
+        model = LanguageModelSnapshot.Capture(model);
         Languages.Encounter(model.LanguageId);
         foreach (var provider in _rename.Matching(model))
         {
@@ -218,6 +293,7 @@ public sealed class MonacoLanguageService
 
     public async ValueTask<WorkspaceEdit?> ProvideRenameEditsAsync(ILanguageTextModel model, LanguagePosition position, string newName, CancellationToken cancellationToken = default)
     {
+        model = LanguageModelSnapshot.Capture(model);
         Languages.Encounter(model.LanguageId);
         foreach (var provider in _rename.Matching(model))
         {
@@ -230,6 +306,7 @@ public sealed class MonacoLanguageService
 
     public async ValueTask<IReadOnlyList<ColorInformation>> ProvideDocumentColorsAsync(ILanguageTextModel model, CancellationToken cancellationToken = default)
     {
+        model = LanguageModelSnapshot.Capture(model);
         Languages.Encounter(model.LanguageId);
         var output = new List<ColorInformation>();
         foreach (var provider in _color.Matching(model))
@@ -243,6 +320,7 @@ public sealed class MonacoLanguageService
 
     public async ValueTask<IReadOnlyList<ColorPresentation>> ProvideColorPresentationsAsync(ILanguageTextModel model, ColorInformation colorInfo, CancellationToken cancellationToken = default)
     {
+        model = LanguageModelSnapshot.Capture(model);
         Languages.Encounter(model.LanguageId);
         var output = new List<ColorPresentation>();
         foreach (var provider in _color.Matching(model))
@@ -256,6 +334,7 @@ public sealed class MonacoLanguageService
 
     public async ValueTask<InlineCompletions> ProvideInlineCompletionsAsync(ILanguageTextModel model, LanguagePosition position, InlineCompletionContext context, CancellationToken cancellationToken = default)
     {
+        model = LanguageModelSnapshot.Capture(model);
         Languages.Encounter(model.LanguageId);
         var output = new List<InlineCompletion>();
         foreach (var provider in _inlineCompletion.Matching(model))
@@ -269,6 +348,7 @@ public sealed class MonacoLanguageService
 
     public async ValueTask<IReadOnlyList<CodeLens>> ProvideCodeLensesAsync(ILanguageTextModel model, CancellationToken cancellationToken = default)
     {
+        model = LanguageModelSnapshot.Capture(model);
         Languages.Encounter(model.LanguageId);
         var output = new List<CodeLens>();
         foreach (var provider in _codeLens.Matching(model))
@@ -287,6 +367,7 @@ public sealed class MonacoLanguageService
 
     public async ValueTask<IReadOnlyList<LanguageLocation>> ProvideDefinitionAsync(ILanguageTextModel model, LanguagePosition position, CancellationToken cancellationToken = default)
     {
+        model = LanguageModelSnapshot.Capture(model);
         Languages.Encounter(model.LanguageId);
         var output = new List<LanguageLocation>();
         foreach (var provider in _definition.Matching(model))
@@ -300,6 +381,7 @@ public sealed class MonacoLanguageService
 
     public async ValueTask<IReadOnlyList<LanguageTextEdit>> ProvideDocumentFormattingEditsAsync(ILanguageTextModel model, FormattingOptions options, CancellationToken cancellationToken = default)
     {
+        model = LanguageModelSnapshot.Capture(model);
         Languages.Encounter(model.LanguageId);
         foreach (var provider in _formatting.Matching(model))
         {
@@ -312,6 +394,7 @@ public sealed class MonacoLanguageService
 
     public async ValueTask<IReadOnlyList<LanguageTextEdit>> ProvideDocumentRangeFormattingEditsAsync(ILanguageTextModel model, LanguageRange range, FormattingOptions options, CancellationToken cancellationToken = default)
     {
+        model = LanguageModelSnapshot.Capture(model);
         Languages.Encounter(model.LanguageId);
         foreach (var provider in _rangeFormatting.Matching(model))
         {
@@ -324,6 +407,7 @@ public sealed class MonacoLanguageService
 
     public async ValueTask<SemanticTokens?> ProvideDocumentSemanticTokensAsync(ILanguageTextModel model, CancellationToken cancellationToken = default)
     {
+        model = LanguageModelSnapshot.Capture(model);
         Languages.Encounter(model.LanguageId);
         foreach (var provider in _semanticTokens.Matching(model))
         {

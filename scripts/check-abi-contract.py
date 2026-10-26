@@ -69,3 +69,16 @@ if re.search(r'if\s*\(\s*native\.AbiVersion\s*!=\s*PackedVersion\s*\)\s*throw\s+
     sys.exit('Managed ABI must require the exact current packed version')
 
 print(f'Current native ABI {version} contract OK: {len(exports)} exports, {len(imports)} managed imports, {len(structs)} layouts; native and managed match')
+
+# Language extension is separately versioned, without changing the editor/model ABI.
+language = contract['languageExtension']
+language_header = (root / 'src/MonacoNative.Core.Native' / language['header']).read_text()
+language_binding = (root / 'src/MonacoNative.Language/NativeCompilerService.cs').read_text()
+language_exports = re.findall(r'MN_API\s+[^;\n]+?\bMN_CALL\s+(mn_[A-Za-z0-9_]+)\s*\(', language_header)
+assert language_exports == language['exports'], 'native language export contract drift'
+language_imports = re.findall(r'private static extern [^;\n]+?\b(mn_[A-Za-z0-9_]+)\s*\(', language_binding)
+assert language_imports == language['exports'], 'managed language import contract drift'
+assert language['version'] == 1 and 'mn_language_abi_version() != 1' in language_binding
+assert language['structs']['mn_language_document']['size64'] == 24
+assert 'public IntPtr Path, Text; public nuint Length;' in language_binding
+print(f'Native language extension ABI {language["version"]} OK: {len(language_exports)} exports and matching managed imports')

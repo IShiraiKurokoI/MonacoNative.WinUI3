@@ -56,6 +56,7 @@ class Program
     {
         await FramingRoundTrip();
         IncrementalSync();
+        SnippetCompletion();
         await TcpLifecycleAndProviderBridge();
         TransportSurface();
         Console.WriteLine("MonacoNative LSP tests passed.");
@@ -94,6 +95,17 @@ class Program
         Test.True(LspTextSynchronization.ComputeMinimalChange("same", "same") is null, "equal text should not produce didChange");
     }
 
+    static void SnippetCompletion()
+    {
+        Test.Equal("Console.WriteLine(value);", LspSnippetText.Expand("Console.WriteLine(${1:value});$0"), "snippet placeholders should expand to plain text");
+        Test.Equal("red", LspSnippetText.Expand("${1|red,green,blue|}"), "snippet choices select first option");
+        Test.Equal("$", LspSnippetText.Expand("\\$"), "escaped dollars remain literal");
+        var snippet = LspSnippetText.ExpandWithCursor("Console.WriteLine(${1:value});$0");
+        Test.Equal("Console.WriteLine(value);", snippet.Text, "snippet default text");
+        Test.Equal<int?>("Console.WriteLine(".Length, snippet.CaretOffset, "initial tabstop must determine caret location");
+        Test.Equal<int?>(3, LspSnippetText.ExpandWithCursor("abc$0").CaretOffset, "final tabstop without numbered fields");
+    }
+
     static async Task TcpLifecycleAndProviderBridge()
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);
@@ -115,6 +127,21 @@ class Program
 
         var languages = new MonacoLanguageService(registerBuiltins: false);
         using var adapter = new LspLanguageAdapter(client, languages, LanguageSelector.ForLanguage("csharp"));
+        using var fallback = languages.RegisterCompletionItemProvider(LanguageSelector.ForLanguage("csharp"), new WordCompletionProvider(new[] { "public" }));
+        var completion = await languages.ProvideCompletionItemsAsync(new FakeModel(), new LanguagePosition(1, 8), new CompletionContext());
+        Test.True(completion.Suggestions.Count == 1, "LSP completion should suppress offline fallback suggestions");
+        Test.Equal("Console.WriteLine(value);", completion.Suggestions.Single().InsertText, "LSP snippet completion must be readable");
+        var item = completion.Suggestions.Single();
+        Test.Equal("Console.WriteLine(${1:value});$0", item.SnippetText!, "raw snippet must survive adapter");
+        Test.True(item.Preselect && item.Deprecated, "preselect and deprecated tags");
+        Test.Equal("System.Console", item.LabelDescription!, "labelDetails preserved");
+        Test.Equal(8, item.InsertRange!.Value.EndColumn, "default insert range");
+        Test.Equal(12, item.ReplaceRange!.Value.EndColumn, "separate default replace range");
+        Test.True(item.Resolve is not null, "resolve provider attached");
+        var resolved = await item.Resolve!(CancellationToken.None);
+        Test.Equal("resolved documentation", resolved.Documentation!, "lazy completion documentation");
+        Test.Equal("Console.WriteLine(${1:value});$0", resolved.SnippetText!, "resolver does not discard original snippet");
+        Test.Equal(1, resolved.AdditionalTextEdits!.Count, "resolved import edits retained");
         var hover = await languages.ProvideHoverAsync(new FakeModel(), new LanguagePosition(1, 8));
         Test.True(hover is not null && hover.Contents.Any(x => x.Value.Contains("hover-from-server", StringComparison.Ordinal)), "hover should cross LSP/provider boundary");
 
@@ -139,6 +166,7 @@ class Program
             var didOpen = await serverState.DidOpen.Task.WaitAsync(TimeSpan.FromSeconds(3));
             Test.Equal("file:///sync.cs", didOpen.GetProperty("textDocument").GetProperty("uri").GetString(), "didOpen URI");
             syncDocument.SetText("alpha\r\nhello brave 😀\r\nend");
+            await session.FlushAsync();
             var didChange = await serverState.DidChange.Task.WaitAsync(TimeSpan.FromSeconds(3));
             var contentChange = didChange.GetProperty("contentChanges")[0];
             var changeRange = contentChange.GetProperty("range");
@@ -172,6 +200,9 @@ class Program
                 {
                     case "initialize":
                         Test.True(id is not null, "initialize must be a request");
+                        Test.True(root.GetProperty("params").GetProperty("capabilities").GetProperty("textDocument")
+                            .GetProperty("completion").GetProperty("completionItem").GetProperty("snippetSupport").GetBoolean(),
+                            "official JSON server needs snippet support in client capabilities");
                         await Send(stream, new
                         {
                             jsonrpc = "2.0",
@@ -182,7 +213,7 @@ class Program
                                 capabilities = new
                                 {
                                     textDocumentSync = new { openClose = true, change = 2 },
-                                    completionProvider = new { triggerCharacters = new[] { "." } },
+                                    completionProvider = new { triggerCharacters = new[] { "." }, resolveProvider = true },
                                     hoverProvider = true,
                                     signatureHelpProvider = new { triggerCharacters = new[] { "(" }, retriggerCharacters = new[] { "," } },
                                     definitionProvider = true,
@@ -253,6 +284,50 @@ class Program
                         break;
                     case "textDocument/didClose":
                         if (root.TryGetProperty("params", out var closeParams)) state.DidClose.TrySetResult(closeParams.Clone());
+                        break;
+                    case "textDocument/completion":
+                        Test.True(id is not null, "completion must be a request");
+                        await Send(stream, new
+                        {
+                            jsonrpc = "2.0", id,
+                            result = new
+                            {
+                                isIncomplete = false,
+                                itemDefaults = new
+                                {
+                                    insertTextFormat = 2,
+                                    data = new { ticket = "completion-42" },
+                                    editRange = new
+                                    {
+                                        insert = new { start = new { line = 0, character = 0 }, end = new { line = 0, character = 7 } },
+                                        replace = new { start = new { line = 0, character = 0 }, end = new { line = 0, character = 11 } },
+                                    },
+                                },
+                                items = new[] { new
+                                {
+                                    label = "Console.WriteLine", kind = 3,
+                                    textEditText = "Console.WriteLine(${1:value});$0", preselect = true, tags = new[] { 1 },
+                                    labelDetails = new { detail = "(string value)", description = "System.Console" },
+                                } },
+                            },
+                        });
+                        break;
+                    case "completionItem/resolve":
+                        Test.True(id is not null, "resolve must be a request");
+                        Test.Equal("completion-42", root.GetProperty("params").GetProperty("data").GetProperty("ticket").GetString(), "itemDefaults.data round trip");
+                        await Send(stream, new
+                        {
+                            jsonrpc = "2.0", id,
+                            result = new
+                            {
+                                documentation = new { kind = "markdown", value = "resolved documentation" },
+                                additionalTextEdits = new[] { new
+                                {
+                                    range = new { start = new { line = 0, character = 0 }, end = new { line = 0, character = 0 } },
+                                    newText = "using System;\n",
+                                } },
+                            },
+                        });
                         break;
                     case "textDocument/hover":
                         Test.True(id is not null, "hover must be a request");

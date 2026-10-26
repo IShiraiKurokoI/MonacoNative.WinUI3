@@ -44,6 +44,11 @@ public sealed record CommentRule(string? LineComment = null, CharacterPair? Bloc
 
 public sealed record AutoClosingPair(string Open, string Close, string? NotIn = null);
 
+public enum EnterIndentAction { None, Indent, IndentOutdent, Outdent }
+
+public sealed record OnEnterRule(string BeforeText, EnterIndentAction Action,
+    string? AfterText = null, string? PreviousLineText = null, string? AppendText = null);
+
 public sealed class LanguageConfiguration
 {
     public CommentRule? Comments { get; init; }
@@ -54,6 +59,9 @@ public sealed class LanguageConfiguration
     public string? WordPattern { get; init; }
     public string? IncreaseIndentPattern { get; init; }
     public string? DecreaseIndentPattern { get; init; }
+    public string? IndentNextLinePattern { get; init; }
+    public string? UnIndentedLinePattern { get; init; }
+    public IReadOnlyList<OnEnterRule> OnEnterRules { get; init; } = Array.Empty<OnEnterRule>();
 }
 
 public sealed record LanguageSelector(

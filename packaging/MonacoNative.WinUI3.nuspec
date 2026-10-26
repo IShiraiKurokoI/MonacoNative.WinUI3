@@ -14,20 +14,34 @@
       <group targetFramework="net8.0-windows10.0.26100.0">
         <dependency id="Microsoft.WindowsAppSDK" version="[2.4.0]" />
         <dependency id="Microsoft.Graphics.Win2D" version="[1.4.0]" />
+        <dependency id="Microsoft.CodeAnalysis.CSharp.Features" version="[4.11.0]" />
+        <dependency id="libclang.runtime.win-x64" version="[17.0.4]" />
+        <dependency id="libclang.runtime.win-arm64" version="[17.0.4]" />
       </group>
     </dependencies>
   </metadata>
   <files>
     <file src="..\LICENSE" target="LICENSE" />
     <file src="..\README.md" target="README.md" />
+    <file src="..\THIRD_PARTY_NOTICES.md" target="THIRD_PARTY_NOTICES.md" />
+    <file src="..\doc\**\*" target="doc" />
     <file src="..\src\MonacoNative.Core.Managed\bin\x64\$configuration$\net8.0-windows10.0.26100.0\MonacoNative.Core.Managed.dll" target="lib\net8.0-windows10.0.26100.0" />
     <file src="..\src\MonacoNative.Renderer.WinUI3\bin\x64\$configuration$\net8.0-windows10.0.26100.0\MonacoNative.Renderer.WinUI3.dll" target="lib\net8.0-windows10.0.26100.0" />
     <file src="..\src\MonacoNative.EditorServices\bin\$configuration$\net8.0\MonacoNative.EditorServices.dll" target="lib\net8.0-windows10.0.26100.0" />
     <file src="..\src\MonacoNative.Language\bin\$configuration$\net8.0\MonacoNative.Language.dll" target="lib\net8.0-windows10.0.26100.0" />
+    <file src="..\src\MonacoNative.Language.Json\bin\$configuration$\net8.0\MonacoNative.Language.Json.dll" target="lib\net8.0-windows10.0.26100.0" />
+    <file src="..\src\MonacoNative.Language.Html\bin\$configuration$\net8.0\MonacoNative.Language.Html.dll" target="lib\net8.0-windows10.0.26100.0" />
+    <file src="..\src\MonacoNative.Language.Css\bin\$configuration$\net8.0\MonacoNative.Language.Css.dll" target="lib\net8.0-windows10.0.26100.0" />
+    <file src="..\src\MonacoNative.Language.TypeScript\bin\$configuration$\net8.0\MonacoNative.Language.TypeScript.dll" target="lib\net8.0-windows10.0.26100.0" />
+    <file src="..\src\MonacoNative.Language.CSharp\bin\$configuration$\net8.0\MonacoNative.Language.CSharp.dll" target="lib\net8.0-windows10.0.26100.0" />
+    <file src="..\src\MonacoNative.Language.Cpp\bin\$configuration$\net8.0\MonacoNative.Language.Cpp.dll" target="lib\net8.0-windows10.0.26100.0" />
     <file src="..\src\MonacoNative.Renderer.WinUI3\bin\x64\$configuration$\net8.0-windows10.0.26100.0\*.pri" target="lib\net8.0-windows10.0.26100.0" />
     <file src="..\src\MonacoNative.Renderer.WinUI3\bin\x64\$configuration$\net8.0-windows10.0.26100.0\**\*.xbf" target="lib\net8.0-windows10.0.26100.0" />
     <file src="..\artifacts\native\x64\$configuration$\MonacoNative.Core.Native.dll" target="runtimes\win-x64\native" />
     <file src="..\artifacts\native\ARM64\$configuration$\MonacoNative.Core.Native.dll" target="runtimes\win-arm64\native" />
     <file src="buildTransitive\MonacoNative.WinUI3.targets" target="buildTransitive\net8.0-windows10.0.26100.0" />
+    <file src="buildTransitive\MonacoNative.ClangRuntime.targets" target="buildTransitive\MonacoNative.ClangRuntime.targets" />
+    <file src="buildTransitive\MonacoNative.NativeValidation.targets" target="buildTransitive\MonacoNative.NativeValidation.targets" />
+    <file src="buildTransitive\MonacoNative.NativeBinaryCheck.cs" target="buildTransitive\MonacoNative.NativeBinaryCheck.cs" />
   </files>
 </package>

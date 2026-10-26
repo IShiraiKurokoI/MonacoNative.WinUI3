@@ -1,28 +1,29 @@
-#include <iostream>
-#include <string>
-#include <vector>
-#include <utility>
-
 namespace demo {
 
 class Greeter {
 public:
-    explicit Greeter(std::string name) : name_(std::move(name)) {}
+    explicit Greeter(const char* name) noexcept : name_(name) {}
 
-    void print() const {
-        std::cout << "Hello, " << name_ << "!\n";
+    const char* name() const noexcept {
+        return name_;
     }
 
+    int greet(int repetitions, const char* punctuation) const noexcept {
+        return name_ && punctuation ? repetitions : 0;
+    }
+
+    int count = 0;
+
 private:
-    std::string name_;
+    const char* name_;
 };
 
 }  // namespace demo
 
 int main() {
-    std::vector<std::string> names { "Monaco", "WinUI", "C++" };
-    for (const auto& name : names) {
-        demo::Greeter(name).print();
-    }
-    return 0;
+    demo::Greeter greeter("Monaco");
+    greeter.count = greeter.greet(3, "!");
+    // Type "greeter." or "pointer->" to inspect real Clang members.
+    auto* pointer = &greeter;
+    return pointer->count;
 }

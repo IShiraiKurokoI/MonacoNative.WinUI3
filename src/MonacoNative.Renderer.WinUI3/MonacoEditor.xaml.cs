@@ -27,7 +27,7 @@ namespace MonacoNative.Renderer.WinUI3;
 /// WinUI renderer. Text layout is native-projected, measured by DirectWrite through
 /// CanvasTextLayout, and painted into a low-latency CanvasSwapChainPanel.
 /// </summary>
-public sealed partial class MonacoEditor : UserControl, IDisposable
+public sealed partial class MonacoEditor : UserControl, IDisposable, IAsyncDisposable
 {
     [Flags]
     private enum RenderDirty
@@ -80,6 +80,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
     };
 
     private readonly MonacoTextModel _model = new("", "cpp");
+    private readonly EditorLifetime _lifetime = new();
     private readonly MonacoViewModel _view;
     private readonly DispatcherTimer _caretTimer;
     private readonly AccessibilitySettings _accessibilitySettings = new();
@@ -140,6 +141,8 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
     private MonacoRange? _initialWordSelection;
     private long _lastPrimaryClickTicks;
     private uint _lastPrimaryClickPointerId;
+    private Windows.Foundation.Point _lastObservedMousePosition;
+    private bool _hasObservedMousePosition;
     private Windows.Foundation.Point _lastPrimaryClickPoint;
     private string _highlightedWord = string.Empty;
     private IReadOnlyList<MonacoRange> _visibleWordMatches = Array.Empty<MonacoRange>();
@@ -185,6 +188,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
         InitializeComponent();
         ContextMenuItemOptions = new System.Collections.ObjectModel.ObservableCollection<EditorContextMenuItemOptions>();
         _languages = new MonacoLanguageService(registerBuiltins: true);
+        RegisterDefaultLanguagePackages();
         _languageDocument = new MonacoLanguageDocument(_model);
         _languageTokens = new IncrementalTokenizationCache(_languageDocument, _languages);
         _bracketPairs = new BracketPairsTree(_languageDocument, _languageTokens, _languages.Languages);
@@ -538,6 +542,8 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
     private void Model_Changed(object? sender, MonacoModelChangedEventArgs e)
     {
         using var methodSample = _methodProfiler.Measure("Model_Changed");
+        OnSnippetModelChanged(e);
+        TrackIncompleteCompletionEdit(e);
         // A word from a previous revision may no longer exist at the same offsets.
         _highlightedWord = string.Empty;
         InvalidateWordHighlights();
@@ -599,6 +605,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
         ModelChanged?.Invoke(this, EventArgs.Empty);
         OnContributionsModelChanged();
         ScheduleLspRefresh();
+        ScheduleNativeDiagnostics();
 
         if (!_loaded || _modelRefreshQueued)
             return;
@@ -882,6 +889,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
                 theme == ElementTheme.Light ? Color.FromArgb(255, 248, 248, 248) : Color.FromArgb(255, 32, 32, 32));
             _contributionPopup.BorderBrush = borderBrush;
         }
+        ApplySuggestWidgetPalette(highContrast, theme);
     }
 
     private void FindToggleVisualStateChanged(object sender, RoutedEventArgs e)
@@ -966,10 +974,16 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
         ScheduleFoldingRefresh();
         Render();
         ScheduleContributionRefresh(full: true);
+        ScheduleNativeDiagnostics();
     }
 
     private void Editor_Unloaded(object sender, RoutedEventArgs e)
     {
+        CancelFoldingRefresh();
+        CancelNativeDiagnostics();
+        HideParameterHints();
+        CancelAutomaticSuggestions();
+        HideSuggestWidget();
         _loaded = false;
         _caretTimer.Stop();
         _accessibilityTimer.Stop();
@@ -994,6 +1008,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
         // an internal adapter focus hop.
         if (_textInput is { TreatAdapterFocusAsEditorFocus: true, HasInputFocus: true })
             return;
+        HideParameterHints();
         _textInput?.NotifyFocusLeave();
         _fallbackCharacterAccumulator.Reset();
         _caretVisible = false;
@@ -2183,6 +2198,8 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
         if (_disposed || e.Pointer.PointerDeviceType != Microsoft.UI.Input.PointerDeviceType.Mouse)
             return;
         var point = e.GetCurrentPoint(SurfaceRoot).Position;
+        _lastObservedMousePosition = point;
+        _hasObservedMousePosition = true;
         // Native flyouts, find controls and code-lens elements must not inherit the text cursor.
         var source = e.OriginalSource as DependencyObject;
         var overOverlay = IsPointerOverFindWidget(e) || IsChildOf(source, ContributionLayer);
@@ -2227,6 +2244,22 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
             if (ReferenceEquals(node, ancestor))
                 return true;
         return false;
+    }
+
+    private bool HasMouseActuallyMoved(PointerRoutedEventArgs e)
+    {
+        if (e.Pointer.PointerDeviceType != Microsoft.UI.Input.PointerDeviceType.Mouse) return false;
+        var point = e.GetCurrentPoint(SurfaceRoot).Position;
+        if (!_hasObservedMousePosition)
+        {
+            _lastObservedMousePosition = point;
+            _hasObservedMousePosition = true;
+            return false;
+        }
+        const double epsilon = 0.25;
+        var dx = point.X - _lastObservedMousePosition.X;
+        var dy = point.Y - _lastObservedMousePosition.Y;
+        return dx * dx + dy * dy > epsilon * epsilon;
     }
 
     private void SetMouseCursor(EditorPointerCursorKind cursor)
@@ -2485,7 +2518,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
             () => Done(() => DeleteWord(backward: false)), false, 0, Keys(new EditorKeybinding("Ctrl+Delete", 100))));
         _commands.Register(new EditorCommandDefinition(
             "monacoNative.type.lineBreak", "monacoNative.type.lineBreak", "menu.category.editor", "editorTextFocus && !editorReadonly",
-            () => Done(() => ReplaceSelection(_model.EndOfLine == MonacoEndOfLine.CrLf ? "\r\n" : "\n")), false, 0, Keys(new EditorKeybinding("Enter", 100))));
+            () => Done(InsertAutoIndentedNewLine), false, 0, Keys(new EditorKeybinding("Enter", 100))));
         _commands.Register(new EditorCommandDefinition(
             "monacoNative.type.tab", "monacoNative.type.tab", "menu.category.editor", "editorTextFocus && !editorReadonly",
             () => Done(() => ReplaceSelection("    ")), false, 0, Keys(new EditorKeybinding("Tab", 100))));
@@ -2813,6 +2846,14 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
             return;
         }
 
+        // The suggest widget never takes focus: Up/Down navigate the list instead
+        // of the document, Enter/Tab commit, and Escape dismisses the widget.
+        // TSF has already had first refusal for active IME composition.
+        if (TryHandleSuggestWidgetKeyDown(e))
+            return;
+        if (TryHandleSnippetKeyDown(e))
+            return;
+
         // Printable text is delivered by CharacterReceived. Do not send the overwhelmingly
         // common unmodified text-key path through the native command resolver first.
         var ctrl = IsKeyDown(VirtualKey.Control);
@@ -2935,7 +2976,10 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
             return;
         var text = _fallbackCharacterAccumulator.Push(ch);
         if (!string.IsNullOrEmpty(text))
-            ReplaceSelection(text);
+        {
+            if (text.Length != 1 || !TryInsertOutdentedClosingDelimiter(text[0]))
+                ReplaceSelection(text);
+        }
         e.Handled = true;
     }
 
@@ -3075,8 +3119,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
             return;
         var text = _model.Text;
         var previous = PreviousTextElementOffset(text, checked((int)start));
-        _model.Replace((nuint)previous, start, string.Empty);
-        _anchor = _active = _model.GetPositionAt((nuint)previous);
+        ReplaceWithSnippetTracking((nuint)previous, start, string.Empty);
         AfterProjectionChanged(true);
     }
 
@@ -3100,8 +3143,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
             return;
         var text = _model.Text;
         var next = NextTextElementOffset(text, checked((int)start));
-        _model.Replace(start, (nuint)next, string.Empty);
-        _anchor = _active = _model.GetPositionAt(start);
+        ReplaceWithSnippetTracking(start, (nuint)next, string.Empty);
         AfterProjectionChanged(true);
     }
 
@@ -3128,14 +3170,12 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
         if (backward)
         {
             var previous = MonacoUnicode.PreviousWordBoundary(text, checked((int)start));
-            _model.Replace((nuint)previous, start, string.Empty);
-            _anchor = _active = _model.GetPositionAt((nuint)previous);
+            ReplaceWithSnippetTracking((nuint)previous, start, string.Empty);
         }
         else
         {
             var next = MonacoUnicode.NextWordBoundary(text, checked((int)end));
-            _model.Replace(end, (nuint)next, string.Empty);
-            _anchor = _active = _model.GetPositionAt(end);
+            ReplaceWithSnippetTracking(end, (nuint)next, string.Empty);
         }
         AfterProjectionChanged(true);
     }
@@ -3160,9 +3200,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
             return;
         }
         var (start, end) = OrderedSelectionOffsets();
-        _model.Replace(start, end, text);
-        var newOffset = start + (nuint)text.Length;
-        _anchor = _active = _model.GetPositionAt(newOffset);
+        ReplaceWithSnippetTracking(start, end, text);
         AfterProjectionChanged(true);
     }
 
@@ -3459,6 +3497,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
     private void OnSelectionChanged()
     {
         using var methodSample = _methodProfiler.Measure("OnSelectionChanged");
+        OnSnippetSelectionChanged();
         // Do not copy long selected ranges / do word queries on each drag move.
         if (!_dragSelecting)
             UpdateSelectedWordHighlight();
@@ -3602,10 +3641,53 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
         Render();
     }
 
+    private static readonly TimeSpan ShutdownGracePeriod = TimeSpan.FromMilliseconds(75);
+
+    private void BeginShutdown()
+    {
+        if (!_lifetime.BeginShutdown())
+            return;
+
+        _loaded = false;
+        _foldRefreshTimer.Stop();
+        _suggestTimer.Stop();
+        _parameterHintsTimer.Stop();
+        _contributionRefreshTimer.Stop();
+        _lspRefreshTimer.Stop();
+
+        CancelNativeDiagnostics();
+        CancelFoldingRefresh();
+        CancelAutomaticSuggestions();
+        CancelParameterHintsRequest();
+        _contributionRefreshCts?.Cancel();
+        _lspRefreshCts?.Cancel();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed) return;
+
+        BeginShutdown();
+        var shutdownClock = System.Diagnostics.Stopwatch.StartNew();
+
+        var binding = _lspBinding;
+        _lspBinding = null;
+        if (binding is not null)
+            _lifetime.TrackDetached(binding.DisposeAsync().AsTask());
+
+        var remaining = ShutdownGracePeriod - shutdownClock.Elapsed;
+        if (remaining > TimeSpan.Zero)
+            await _lifetime.DrainAsync(remaining).ConfigureAwait(true);
+
+        Dispose();
+    }
+
     public void Dispose()
     {
         if (_disposed)
             return;
+        BeginShutdown();
+        CancelSnippetSession();
         _disposed = true;
         _loaded = false;
         _caretTimer.Stop();
@@ -3616,6 +3698,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
         _decorationIdleTimer.Tick -= DecorationIdleTimer_Tick;
         _foldRefreshTimer.Stop();
         _foldRefreshTimer.Tick -= FoldRefreshTimer_Tick;
+        CancelFoldingRefresh();
         _contextMenu.Opening -= ContextMenu_Opening;
         _contextMenu.Closed -= ContextMenu_Closed;
         _localization.CultureChanged -= Localization_CultureChanged;
@@ -3629,13 +3712,16 @@ public sealed partial class MonacoEditor : UserControl, IDisposable
         _minimapPointerCursor?.Dispose();
         _arrowPointerCursor?.Dispose();
         DetachTextInputController(notifyFocusLeave: false);
+        CancelNativeDiagnostics();
         DisposeLspBinding();
         DisposeContributions();
+        _languages.Packages.Dispose();
         _commands.Dispose();
         _model.Changed -= Model_Changed;
         ReleaseGraphicsResources();
         _view.Dispose();
         _model.Dispose();
+        _lifetime.Dispose();
         GC.SuppressFinalize(this);
     }
 }

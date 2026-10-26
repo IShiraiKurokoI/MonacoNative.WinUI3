@@ -1,4 +1,4 @@
-// JavaScript sample: syntax tokens, scopes, folding and search.
+// JavaScript sample: basic members, arrow functions and parameter hints.
 const greeting = (name = 'MonacoNative') => `Hello, ${name}!`;
 
 class Counter {
@@ -18,3 +18,6 @@ for (let index = 0; index < 3; index++) {
 }
 
 export { Counter, greeting };
+
+// Type "counter." for value/increment, or "greeting(" for parameter hints.
+// Ctrl+Shift+Space also works inside a string argument.

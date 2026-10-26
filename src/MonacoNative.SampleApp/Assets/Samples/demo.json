@@ -1,0 +1,10 @@
+{
+    "$schema": "monaco://schemas/sample-package",
+    "name": "monaco-native-sample",
+    "version": "1.0.0",
+    "private": true,
+    "description": "Edit a property name to request offline schema completions.",
+    "scripts": {
+        "start": "node demo.js"
+    }
+}

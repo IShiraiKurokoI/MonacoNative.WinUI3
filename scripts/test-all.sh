@@ -12,6 +12,7 @@ else
   echo "dotnet not found; portable managed tests are covered by CI and Windows test-all." >&2
 fi
 
+
 rm -rf "$ROOT/build-release"
 cmake -S "$ROOT" -B "$ROOT/build-release" -G Ninja \
   -DCMAKE_BUILD_TYPE=Release \

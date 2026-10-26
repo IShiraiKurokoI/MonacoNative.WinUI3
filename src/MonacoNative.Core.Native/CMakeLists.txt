@@ -1,12 +1,15 @@
 add_library(MonacoNative.Core.Native SHARED
     MonacoNative.Core.Native.cpp
+    MonacoNative.Language.Native.cpp
+    ../MonacoNative.Language.Cpp/Native/ClangLanguageEngine.cpp
+    ../MonacoNative.Language.TypeScript/Native/TypeScriptLanguageEngine.cpp
 )
 
 target_include_directories(MonacoNative.Core.Native
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../MonacoNative.Core/include
 )
-target_link_libraries(MonacoNative.Core.Native PRIVATE MonacoNative.Core)
+target_link_libraries(MonacoNative.Core.Native PRIVATE MonacoNative.Core ${CMAKE_DL_LIBS})
 
 # The Windows C ABI exposes TSF sessions. Link their implementation target instead
 # of duplicating include paths: its PUBLIC usage requirements supply the TSF
