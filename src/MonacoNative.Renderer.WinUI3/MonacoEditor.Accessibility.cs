@@ -69,12 +69,39 @@ public sealed partial class MonacoEditor
 
     internal int AccessibilityOffsetFromScreenPoint(Point screenPoint)
     {
-        var scale = Math.Max(0.01, XamlRoot?.RasterizationScale ?? 1.0);
-        var control = ConvertEditorLocalRectToCoreTextBounds(new Rect(0, 0, Math.Max(1, ActualWidth), Math.Max(1, ActualHeight))).Screen;
-        var localX = Math.Clamp((screenPoint.X - control.X) / scale, 0, Math.Max(0, ActualWidth));
-        var localY = Math.Clamp((screenPoint.Y - control.Y) / scale, 0, Math.Max(0, ActualHeight));
-        var position = HitTest(localX, localY);
+        if (XamlRoot is null || _disposed || _layoutCache is null)
+            return 0;
+
+        // UI Automation supplies physical desktop pixels, not XAML DIPs. Use the
+        // same screen-to-surface conversion as the native TSF hit-test path:
+        // subtracting the control's screen origin and dividing by a cached DPI
+        // loses the border/visual transform and is incorrect across monitors.
+        var local = XamlRoot.CoordinateConverter.ConvertScreenToLocal(
+            new Windows.Graphics.PointInt32(
+                checked((int)Math.Round(screenPoint.X)),
+                checked((int)Math.Round(screenPoint.Y))));
+        var surfacePoint = XamlRoot.Content.TransformToVisual(SurfaceRoot).TransformPoint(local);
+        var position = HitTest(
+            Math.Clamp(surfacePoint.X, 0, Math.Max(0, SurfaceRoot.ActualWidth)),
+            Math.Clamp(surfacePoint.Y, 0, Math.Max(0, SurfaceRoot.ActualHeight)));
         return checked((int)Math.Min(_model.GetOffsetAt(position), (nuint)int.MaxValue));
+    }
+
+    private Rect AccessibilitySurfaceRectToScreenPixels(Rect surfaceRect)
+    {
+        if (XamlRoot is null)
+            return new Rect(0, 0, 0, 0);
+        // Draw/hit-test positions in this file are SurfaceRoot-local DIPs. The
+        // converter applies RasterizationScale and the desktop window offset
+        // exactly once, returning the physical coordinates required by UIA.
+        var transform = SurfaceRoot.TransformToVisual(XamlRoot.Content);
+        var topLeft = transform.TransformPoint(new Point(surfaceRect.Left, surfaceRect.Top));
+        var bottomRight = transform.TransformPoint(new Point(surfaceRect.Right, surfaceRect.Bottom));
+        var rootRect = new Rect(
+            Math.Min(topLeft.X, bottomRight.X), Math.Min(topLeft.Y, bottomRight.Y),
+            Math.Abs(bottomRight.X - topLeft.X), Math.Abs(bottomRight.Y - topLeft.Y));
+        var screen = XamlRoot.CoordinateConverter.ConvertLocalToScreen(rootRect);
+        return new Rect(screen.X, screen.Y, screen.Width, screen.Height);
     }
 
     internal double[] AccessibilityBoundingRectangles(int start, int end)
@@ -145,7 +172,7 @@ public sealed partial class MonacoEditor
                 var local = ClipToViewport(rect);
                 if (local.Width <= 0 || local.Height <= 0)
                     return;
-                var screen = ConvertEditorLocalRectToCoreTextBounds(local).Screen;
+                var screen = AccessibilitySurfaceRectToScreenPixels(local);
                 values.Add(screen.X);
                 values.Add(screen.Y);
                 values.Add(screen.Width);

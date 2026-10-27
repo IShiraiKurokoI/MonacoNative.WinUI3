@@ -40,6 +40,7 @@ public sealed class JsonLanguagePackage : ILanguagePackage
                 regs.Add(service.RegisterHoverProvider(LanguageSelector.ForLanguage(id), native));
                 regs.Add(service.RegisterFoldingRangeProvider(LanguageSelector.ForLanguage(id), new JsonFolding()));
                 regs.Add(service.RegisterDocumentDiagnosticsProvider(LanguageSelector.ForLanguage(id), native));
+                regs.Add(service.RegisterCodeActionProvider(LanguageSelector.ForLanguage(id), native));
                 var formatter = new JsoncFormattingProvider();
                 regs.Add(service.RegisterDocumentFormattingEditProvider(LanguageSelector.ForLanguage(id), formatter));
                 regs.Add(service.RegisterDocumentRangeFormattingEditProvider(LanguageSelector.ForLanguage(id), formatter));

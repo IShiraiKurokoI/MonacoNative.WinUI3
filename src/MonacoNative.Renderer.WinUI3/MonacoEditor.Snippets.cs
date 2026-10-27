@@ -1,5 +1,8 @@
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
+using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
+using Microsoft.UI.Xaml.Media;
 using MonacoNative.Core;
 using MonacoNative.Language;
 using Windows.System;
@@ -12,11 +15,134 @@ public sealed partial class MonacoEditor
     private bool _applyingSnippetMirrors;
     private bool _snippetMirrorsQueued;
     private bool _selectingSnippetStop;
+    private Border? _snippetChoicePopup;
+    private StackPanel? _snippetChoiceRows;
+    private readonly List<Border> _snippetChoiceBorders = new();
+    private int _snippetChoiceIndex;
+
+    private bool IsSnippetChoiceVisible => _snippetChoicePopup?.Visibility == Visibility.Visible;
+
+    private void InitializeSnippetChoicePopup()
+    {
+        _snippetChoiceRows = new StackPanel { Spacing = 0 };
+        _snippetChoicePopup = new Border
+        {
+            Visibility = Visibility.Collapsed,
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(4),
+            Padding = new Thickness(2),
+            Background = _suggestPopup?.Background ?? Brush(255, 37, 37, 38),
+            BorderBrush = _suggestPopup?.BorderBrush ?? Brush(255, 88, 88, 88),
+            Child = new ScrollViewer
+            {
+                MaxHeight = 240,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Content = _snippetChoiceRows,
+            },
+        };
+        AutomationProperties.SetName(_snippetChoicePopup, "Snippet placeholder choices");
+        ContributionLayer.Children.Add(_snippetChoicePopup);
+    }
+
+    private void HideSnippetChoicePopup()
+    {
+        if (_snippetChoicePopup is not null)
+            _snippetChoicePopup.Visibility = Visibility.Collapsed;
+        _snippetChoiceRows?.Children.Clear();
+        _snippetChoiceBorders.Clear();
+    }
+
+    private void ShowSnippetChoices(SnippetPlaceholder stop)
+    {
+        HideSnippetChoicePopup();
+        if (_snippetChoicePopup is null || _snippetChoiceRows is null || _disposed ||
+            _textInput?.IsComposing == true || stop.Choices.Count < 2) return;
+        CancelAutomaticSuggestions();
+        HideSuggestWidget();
+        _snippetChoiceIndex = 0;
+        for (var i = 0; i < stop.Choices.Count; i++)
+        {
+            var index = i;
+            var row = new Border
+            {
+                MinHeight = 26,
+                Padding = new Thickness(8, 4, 8, 4),
+                CornerRadius = new CornerRadius(2),
+                Child = new TextBlock
+                {
+                    Text = stop.Choices[i],
+                    FontSize = 13,
+                    Foreground = new SolidColorBrush(_suggestForeground),
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                },
+            };
+            AutomationProperties.SetName(row, stop.Choices[i]);
+            row.PointerPressed += (_, e) =>
+            {
+                if (!e.GetCurrentPoint(row).Properties.IsLeftButtonPressed) return;
+                e.Handled = true;
+                _snippetChoiceIndex = index;
+                CommitSnippetChoice(advance: false);
+            };
+            _snippetChoiceRows.Children.Add(row);
+            _snippetChoiceBorders.Add(row);
+        }
+        _snippetChoicePopup.Visibility = Visibility.Visible;
+        UpdateSnippetChoiceSelection();
+        PositionSnippetChoicePopup();
+    }
+
+    private void ApplySnippetChoicePalette()
+    {
+        if (_snippetChoicePopup is null || _suggestPopup is null) return;
+        _snippetChoicePopup.Background = _suggestPopup.Background;
+        _snippetChoicePopup.BorderBrush = _suggestPopup.BorderBrush;
+        foreach (var row in _snippetChoiceBorders)
+            if (row.Child is TextBlock label)
+                label.Foreground = new SolidColorBrush(_suggestForeground);
+        UpdateSnippetChoiceSelection();
+    }
+
+    private void UpdateSnippetChoiceSelection()
+    {
+        for (var i = 0; i < _snippetChoiceBorders.Count; i++)
+            _snippetChoiceBorders[i].Background = new SolidColorBrush(i == _snippetChoiceIndex
+                ? _suggestSelectedBackground : Microsoft.UI.Colors.Transparent);
+    }
+
+    private void PositionSnippetChoicePopup()
+    {
+        if (!IsSnippetChoiceVisible || _snippetChoicePopup is null || _snippetSession?.Current is not { } stop) return;
+        var point = GetViewportPoint(_model.GetPositionAt((nuint)stop.Start), belowLine: true);
+        if (point.Y < -_lineHeight || point.Y > ActualHeight + _lineHeight)
+        { HideSnippetChoicePopup(); return; }
+        var width = Math.Min(340, Math.Max(120, ActualWidth - 12));
+        var height = Math.Min(244, stop.Choices.Count * 26 + 6);
+        _snippetChoicePopup.Width = width;
+        Canvas.SetLeft(_snippetChoicePopup, Math.Clamp(point.X, 4, Math.Max(4, ActualWidth - width - 4)));
+        var above = point.Y - _lineHeight - height;
+        var y = point.Y + height > ActualHeight - 4 && above >= 4 ? above : point.Y;
+        Canvas.SetTop(_snippetChoicePopup, Math.Clamp(y, 4, Math.Max(4, ActualHeight - height - 4)));
+    }
+
+    private void CommitSnippetChoice(bool advance)
+    {
+        if (!IsSnippetChoiceVisible || _disposed || _isReadOnly || _textInput?.IsComposing == true ||
+            _snippetSession?.Current is not { } stop || _snippetChoiceIndex >= stop.Choices.Count) return;
+        var choice = stop.Choices[_snippetChoiceIndex];
+        HideSnippetChoicePopup();
+        ReplaceWithSnippetTracking((nuint)stop.Start, (nuint)stop.End, choice);
+        AfterProjectionChanged(true);
+        OnSelectionChanged();
+        if (advance && IsInSnippetMode)
+            SelectSnippetStop(_snippetSession?.Move(backwards: false));
+    }
 
     public bool IsInSnippetMode => _snippetSession?.IsActive == true;
 
     private void CancelSnippetSession()
     {
+        HideSnippetChoicePopup();
         _snippetSession?.Cancel();
         _snippetSession = null;
         _snippetMirrorsQueued = false;
@@ -34,6 +160,7 @@ public sealed partial class MonacoEditor
     private void SelectSnippetStop(SnippetPlaceholder? stop)
     {
         if (stop is null) { CancelSnippetSession(); return; }
+        HideSnippetChoicePopup();
         _selectingSnippetStop = true;
         try
         {
@@ -45,6 +172,7 @@ public sealed partial class MonacoEditor
             if (stop.Index == 0) CancelSnippetSession();
         }
         finally { _selectingSnippetStop = false; }
+        if (IsInSnippetMode) ShowSnippetChoices(stop);
     }
 
     private bool TryHandleSnippetKeyDown(KeyRoutedEventArgs e)
@@ -52,6 +180,24 @@ public sealed partial class MonacoEditor
         if (!IsInSnippetMode || _isReadOnly || _textInput?.IsComposing == true) return false;
         if (IsKeyDown(VirtualKey.Control) || IsKeyDown(VirtualKey.Menu) ||
             IsKeyDown(VirtualKey.LeftWindows) || IsKeyDown(VirtualKey.RightWindows)) return false;
+        if (IsSnippetChoiceVisible)
+        {
+            var count = _snippetSession?.Current?.Choices.Count ?? 0;
+            switch (e.Key)
+            {
+                case VirtualKey.Up: _snippetChoiceIndex = (_snippetChoiceIndex + count - 1) % count; break;
+                case VirtualKey.Down: _snippetChoiceIndex = (_snippetChoiceIndex + 1) % count; break;
+                case VirtualKey.Home: _snippetChoiceIndex = 0; break;
+                case VirtualKey.End: _snippetChoiceIndex = count - 1; break;
+                case VirtualKey.Enter: CommitSnippetChoice(advance: false); e.Handled = true; return true;
+                case VirtualKey.Tab: CommitSnippetChoice(advance: true); e.Handled = true; return true;
+                case VirtualKey.Escape: HideSnippetChoicePopup(); e.Handled = true; return true;
+                default: return false;
+            }
+            UpdateSnippetChoiceSelection();
+            e.Handled = true;
+            return true;
+        }
         if (e.Key == VirtualKey.Escape)
         { CancelSnippetSession(); e.Handled = true; return true; }
         if (e.Key != VirtualKey.Tab) return false;
@@ -72,6 +218,7 @@ public sealed partial class MonacoEditor
     private void OnSnippetModelChanged(MonacoModelChangedEventArgs change)
     {
         if (_applyingSnippetMirrors || !IsInSnippetMode) return;
+        HideSnippetChoicePopup();
         if (change.IsFullInvalidation) { CancelSnippetSession(); return; }
         var text = _model.GetTextRange(change.StartOffset, change.NewEndOffset - change.StartOffset);
         if (!_snippetSession!.ObserveEdit(checked((int)change.StartOffset),

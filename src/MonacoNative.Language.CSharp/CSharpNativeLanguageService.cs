@@ -35,7 +35,7 @@ public sealed class CSharpLanguageOptions
 /// emulator. Upstream libraries are restored as pinned NuGet dependencies, not vendored sources.
 /// Immutable request snapshots keep completion edits tied to the document that produced them.
 /// </summary>
-public sealed class CSharpNativeLanguageService : ICompletionItemProvider, IHoverProvider,
+public sealed partial class CSharpNativeLanguageService : ICompletionItemProvider, IHoverProvider,
     IDefinitionProvider, IReferenceProvider, ISignatureHelpProvider, IDocumentFormattingEditProvider,
     IDocumentRangeFormattingEditProvider, IDocumentDiagnosticsProvider, IDisposable
 {
@@ -284,10 +284,45 @@ public sealed class CSharpNativeLanguageService : ICompletionItemProvider, IHove
         else if (arguments.Parent is ObjectCreationExpressionSyntax creation && semantic.GetTypeInfo(creation, ct).Type is INamedTypeSymbol type)
             methods = type.InstanceConstructors.Where(m => semantic.IsAccessible(offset, m));
         var active = arguments.Arguments.GetSeparators().Count(separator => separator.SpanStart < offset);
-        var signatures = methods.Select(method => new SignatureInformation(method.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
+        var candidates = methods.ToArray();
+        var signatures = candidates.Select(method => new SignatureInformation(method.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat),
             Parameters: method.Parameters.Select(p => new ParameterInformation(p.ToDisplayString(SymbolDisplayFormat.MinimallyQualifiedFormat))).ToArray(),
             ActiveParameter: Math.Min(active, Math.Max(0, method.Parameters.Length - 1)))).ToArray();
-        return signatures.Length == 0 ? null : new SignatureHelp(signatures, ActiveParameter: active);
+        if (signatures.Length == 0) return null;
+        // Unlike a purely syntactic picker, the Roslyn provider can inspect the types of local
+        // variables and expressions. Keep the result as an ActiveSignature preference for the UI.
+        var argumentTypes = arguments.Arguments.Select(a => semantic.GetTypeInfo(a.Expression, ct).Type).ToArray();
+        var required = active + 1;
+        var selected = 0;
+        var bestScore = int.MinValue;
+        for (var index = 0; index < candidates.Length; index++)
+        {
+            var candidate = candidates[index];
+            var parameters = candidate.Parameters;
+            var variadic = parameters.Length > 0 && parameters[^1].IsParams;
+            var minimum = parameters.Count(p => !p.IsOptional && !p.IsParams);
+            var maximum = variadic ? int.MaxValue : parameters.Length;
+            var score = required <= maximum ? 100 : -1000;
+            if (required >= minimum && required <= maximum) score += 10;
+            if (parameters.Length == required) score += 5;
+            for (var arg = 0; arg < argumentTypes.Length; arg++)
+            {
+                if (parameters.Length == 0 || (arg >= parameters.Length && !variadic)) break;
+                var actual = argumentTypes[arg];
+                if (actual is null) continue;
+                var parameter = parameters[Math.Min(arg, parameters.Length - 1)].Type;
+                if (SymbolEqualityComparer.Default.Equals(actual, parameter)) score += 40;
+                else
+                {
+                    var conversion = semantic.Compilation.ClassifyCommonConversion(actual, parameter);
+                    score += conversion.Exists && conversion.IsImplicit ? 8 : -30;
+                }
+            }
+            if (score <= bestScore) continue;
+            bestScore = score;
+            selected = index;
+        }
+        return new SignatureHelp(signatures, ActiveSignature: selected, ActiveParameter: active);
     }
     public ValueTask<IReadOnlyList<LanguageTextEdit>?> ProvideDocumentFormattingEditsAsync(ILanguageTextModel model, FormattingOptions options, CancellationToken ct) => FormatAsync(model, null, options, ct);
     public ValueTask<IReadOnlyList<LanguageTextEdit>?> ProvideDocumentRangeFormattingEditsAsync(ILanguageTextModel model, LanguageRange range, FormattingOptions options, CancellationToken ct) => FormatAsync(model, range, options, ct);

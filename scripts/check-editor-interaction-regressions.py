@@ -192,3 +192,64 @@ assert 'parameterHintsVisible && !suggestWidgetVisible' in contributions
 assert 'RegisterSignatureHelpProvider' in (root / 'src/MonacoNative.Language.TypeScript/TypeScriptLanguagePackage.cs').read_text()
 assert 'BasicEditingTests.cpp' in (root / 'tests/NativeAbiTests/CMakeLists.txt').read_text()
 print('PASS: parameter-hints triggers, lifecycle and stale-result guards')
+
+# Guard the source-level connections for editing interactions.
+# These are structural checks; LanguageTests and Windows acceptance exercise behavior.
+commit = (root / 'src/MonacoNative.Language/CompletionCommitCharacters.cs').read_text(encoding='utf-8')
+signature = (root / 'src/MonacoNative.Language/SignatureHelpSelection.cs').read_text(encoding='utf-8')
+lsp = (renderer / 'MonacoEditor.Lsp.cs').read_text(encoding='utf-8')
+assert 'TryCommitSelectedSuggestionCharacter(text)' in source
+assert 'CompletionCommitCharacters.Accepts(item, character)' in suggest
+assert 'CommitSelectedSuggestionAsync(character)' in suggest
+assert 'CompletionCommitCharacters.AppendOnce(text, commitCharacter)' in contributions
+assert 'item.CommitCharacters?' in commit and 'insertion.EndsWith(commitCharacter' in commit
+assert 'InitializeSnippetChoicePopup()' in contributions
+assert 'ShowSnippetChoices(stop)' in snippets and 'CommitSnippetChoice(advance: true)' in snippets
+assert 'ApplySnippetChoicePalette()' in suggest and 'ApplySnippetChoicePalette()' in snippets
+assert 'TryHandleSnippetKeyDown(e)' in keydown and 'IsComposing == true' in snippets
+assert 'CycleParameterHints(1)' in contributions and 'CycleParameterHints(-1)' in contributions
+assert 'SignatureHelpSelection' in signature and 'previousLabel' in signature
+assert '_parameterSignatureSelection.SetHelp(help, call)' in contributions
+assert 'SignatureCallScanner.Scan(' in contributions and 'SignatureCallContext' in signature
+assert 'CreateArrow("\\u25B2"' in contributions and 'CreateArrow("\\u25BC"' in contributions
+assert 'AllowFocusOnInteraction = false' in contributions
+assert 'DetachLspBindingForDocumentChange()' in language
+assert 'request != _semanticTokensRequestSequence' in language
+assert 'request != _inlayHintsRequestSequence' in language
+assert 'request != _lspBindingRequestSequence' in lsp
+print('PASS: completion, snippet choice and document-snapshot wiring guards')
+
+# Shortcut profiles, host overrides and normal shutdown must stay wired to WinUI.
+profile = (renderer / 'EditorShortcutProfiles.cs').read_text(encoding='utf-8')
+commands = (renderer / 'EditorCommandService.cs').read_text(encoding='utf-8')
+cpp_package = (root / 'src/MonacoNative.Language.Cpp/CppLanguagePackage.cs').read_text(encoding='utf-8')
+cpp_formatter = (root / 'src/MonacoNative.Language.Cpp/CppClangFormatProvider.cs').read_text(encoding='utf-8')
+assert 'public enum EditorShortcutScheme' in profile and 'VSCode,' in profile and 'VisualStudio,' in profile
+assert 'ShortcutScheme { get; private set; } = EditorShortcutScheme.VSCode' in commands
+assert '_overrides.TryGetValue' in commands and 'RebuildBindings();' in commands
+assert 'public void SetShortcutOverride(' in source and 'public EditorShortcutScheme ShortcutScheme' in source
+# Command-menu shortcut labels are resolved by the command service, not a static
+# renderer helper reading an instance field (a previous CS0120 build regression).
+assert source.count('KeyboardAcceleratorTextOverride = _commands.GetShortcutLabel(command),') == 2
+assert 'private static string ShortcutLabel(' not in source
+assert 'public string GetShortcutLabel(EditorCommandDefinition command)' in commands
+assert 'EditorShortcutLabelFormatter.Format(preferred.Chord)' in commands
+assert 'internal static class EditorShortcutLabelFormatter' in profile
+# Document statistics and language-package introspection live in the renderer,
+# not in the example application. The UI never reads a disposed model directly.
+status = (renderer / 'MonacoEditor.Status.cs').read_text(encoding='utf-8')
+assert 'public bool TryGetDocumentStatus(out EditorDocumentStatus status)' in status
+assert 'public bool TryGetLanguageStatus(out EditorLanguageStatus status)' in status
+assert 'if (IsDisposed) return false;' in status
+assert 'Editor.TryGetDocumentStatus(out var document)' in sample
+assert 'Editor.TryGetLanguageStatus(out var language)' in sample
+assert 'Editor.VersionId' not in sample and 'Editor.LineCount' not in sample
+assert 'MonacoTextStatistics.CountCharacters' not in sample
+assert 'ShortcutSchemeBox_SelectionChanged' in sample
+assert 'if (_closing || Editor.IsDisposed) return;' in sample
+assert 'public bool IsDisposed => _disposed || _lifetime.IsStopping;' in source
+assert 'if (IsDisposed || cancellationToken.IsCancellationRequested) return;' in contributions
+assert 'new Grid { ColumnSpacing = 6' in contributions and 'of {help.Signatures.Count}' in contributions
+assert 'new CppClangFormatProvider(' in cpp_package and 'BasicSourceFormattingProvider' not in cpp_package
+assert '--assume-filename=' in cpp_formatter and '--lines=' in cpp_formatter and 'RedirectStandardInput = true' in cpp_formatter
+print('PASS: profile overrides, overload alignment, shutdown guards, and LLVM formatter wiring')

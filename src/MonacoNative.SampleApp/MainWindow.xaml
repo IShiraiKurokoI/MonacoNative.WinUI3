@@ -116,6 +116,9 @@
                         <TextBlock x:Name="CommandAccessHeader" Text="COMMAND ACCESS" FontWeight="SemiBold" FontSize="13" />
                         <TextBlock x:Name="CommandAccessDescription" Text="Advanced commands: context menu + shortcut / shortcut only / disabled."
                                    TextWrapping="Wrap" FontSize="11" Opacity="0.7" />
+                        <TextBlock x:Name="KeyboardShortcutsHeader" Text="Keyboard Shortcuts" FontWeight="SemiBold" FontSize="12" Margin="0,8,0,0" />
+                        <ComboBox x:Name="ShortcutSchemeBox" AutomationProperties.AutomationId="ShortcutSchemeBox"
+                                  HorizontalAlignment="Stretch" SelectionChanged="ShortcutSchemeBox_SelectionChanged" />
                         <Button x:Name="FindSidebarButton" Content="Find (Ctrl+F)" Click="Find_Click" HorizontalAlignment="Stretch"
                                 AutomationProperties.AutomationId="OpenFindButton" />
                         <Button x:Name="ReplaceSidebarButton" Content="Replace (Ctrl+H)" Click="Replace_Click" HorizontalAlignment="Stretch"

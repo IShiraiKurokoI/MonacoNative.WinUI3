@@ -1,14 +1,16 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0-windows10.0.26100.0</TargetFramework>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <Platforms>x64</Platforms>
-    <PlatformTarget>x64</PlatformTarget>
+    <Platforms>x64;ARM64</Platforms>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <RuntimeIdentifier Condition="'$(Platform)' == 'x64'">win-x64</RuntimeIdentifier>
+    <RuntimeIdentifier Condition="'$(Platform)' == 'ARM64'">win-arm64</RuntimeIdentifier>
     <RepoRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\..\'))</RepoRoot>
-    <NativeCoreDll>$(RepoRoot)artifacts\native\x64\$(Configuration)\MonacoNative.Core.Native.dll</NativeCoreDll>
+    <NativeCoreDll>$(RepoRoot)artifacts\native\$(Platform)\$(Configuration)\MonacoNative.Core.Native.dll</NativeCoreDll>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\MonacoNative.Core.Managed\MonacoNative.Core.Managed.csproj" />

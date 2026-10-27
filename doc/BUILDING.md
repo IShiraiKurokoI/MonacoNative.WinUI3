@@ -4,7 +4,7 @@
 
 ## Windows development environment
 
-The checked-in projects target Windows 10 build 19041 or later / Windows 11, on x64 and ARM64. They use Windows SDK **10.0.26100.0**, .NET **8**, Windows App SDK **2.4.0**, and Win2D **1.4.0**. The C++/WinRT project references **3.0.260818.1** and requires the corresponding Visual Studio / MSVC / C++/WinRT tools. These are repository configuration values, not floating references to the latest releases.
+The checked-in projects target Windows 10 build 19041 or later / Windows 11, on x64 and ARM64. They use Windows SDK **10.0.26100.0**, .NET **10**, Windows App SDK **2.4.0**, and Win2D **1.4.0**. The C++/WinRT project references **3.0.260818.1** and requires the corresponding Visual Studio / MSVC / C++/WinRT tools. These are repository configuration values, not floating references to the latest releases.
 
 Install the C++ and .NET desktop development workloads and required SDKs. Open `MonacoNative.sln`, select `Debug | x64`, restore packages, and choose `MonacoNative.SampleApp` as the startup project. The sample is an unpackaged WinUI 3 desktop application.
 
@@ -12,10 +12,16 @@ Install the C++ and .NET desktop development workloads and required SDKs. Open `
 # Build the native core, managed projection, WinRT component, and WinUI sample.
 ./scripts/build-windows.ps1 -Configuration Release -Platform x64
 # Non-interactive tests, including required native language integration.
-./scripts/test-windows.ps1 -Configuration Release
+./scripts/test-acceptance.ps1 -Mode Automated -Configuration Release -RunPackages
 # Requires an unlocked interactive desktop; not a headless CI substitute.
-./scripts/test-ui.ps1 -Configuration Release -SkipBuild
+./scripts/test-acceptance.ps1 -Mode Interactive -Configuration Release -SkipUiBuild
 ```
+
+Do not use `-Mode Release` until Windows x64 manual acceptance and a reviewed golden
+baseline have been committed for that version. Release mode *must* fail otherwise.
+The repository requires the .NET 10 SDK. The Windows App SDK and Win2D
+versions are pinned separately; see [Roadmap](ROADMAP.md) and
+[Packaging](PACKAGING.md).
 
 Normal Visual Studio builds do not require Python, Ninja, or an upstream source checkout. Maintenance and test scripts have their own prerequisites; see [testing](TESTING.md).
 
@@ -44,6 +50,12 @@ The task uses MSBuild's `RoslynCodeTaskFactory`; it does not launch Python, Powe
 A missing DLL, invalid/truncated PE data, wrong machine type, conflicting Platform / PlatformTarget / RID, or missing required export fails the build with **`MNATIVE001`**. The root output DLL takes precedence over `runtimes/win-<architecture>/native/`; a wrong root DLL is not hidden by a valid fallback. No global LLVM installation or PATH search is used.
 
 The architecture comes from the target configuration, not the build host. Inspecting an ARM64 DLL during an x64 build does not execute ARM64 code. Design-time builds are excluded. Shared AnyCPU library builds are not forced to deploy application dependencies. Visual Studio's up-to-date check can skip MSBuild entirely; use **Rebuild** to force inspection after manually changing output files.
+
+After `-RunPackages`, the acceptance script also runs the shipping binary validator
+against the linked ARM64 Core.Native DLL, including wrong-architecture and
+missing-export cases. That validation is safe on x64 because it reads PE headers
+and exports. It does not load or run the ARM64 binary and does not verify its
+sample application publish layout.
 
 A successful message looks like:
 

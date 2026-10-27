@@ -1,0 +1,59 @@
+name: Desktop Device Validation
+
+# This job requires a logged-in, unlocked interactive desktop and a persistent
+# runner with known hardware. It is intentionally not a pull-request gate:
+# ordinary hosted runners do not establish physical display/GPU acceptance.
+on:
+  workflow_dispatch:
+    inputs:
+      dpi:
+        description: 'Display scaling on the selected self-hosted runner'
+        type: choice
+        required: true
+        default: '100'
+        options: ['100', '125', '150', '200']
+      require_gpu_counters:
+        description: 'Fail when process GPU-memory counters are unavailable'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  desktop-device:
+    name: UIA geometry, desktop latency and GPU diagnostics (${{ inputs.dpi }}%)
+    runs-on: [self-hosted, Windows, X64, monaco-desktop, "dpi-${{ inputs.dpi }}"]
+    timeout-minutes: 75
+    env:
+      MONACONATIVE_EXPECTED_SCALE_PERCENT: "${{ inputs.dpi }}"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - name: Check interactive desktop
+        shell: pwsh
+        run: |
+          if (-not [Environment]::UserInteractive) { throw 'Device runner must have an unlocked interactive desktop.' }
+      - name: Build x64 editor and SampleApp
+        shell: pwsh
+        run: ./scripts/build-windows.ps1 -Configuration Release
+      - name: Real UIA interactions, physical-pixel geometry and window lifetime
+        shell: powershell
+        run: ./scripts/test-ui.ps1 -Configuration Release -SkipBuild
+      - name: Measure UIA-observed input latency and process GPU resource counters
+        shell: powershell
+        run: |
+          $params = @{ Configuration = 'Release'; Iterations = 40 }
+          if ('${{ inputs.require_gpu_counters }}' -eq 'true') { $params.RequireGpuCounters = $true }
+          ./tests/UiAutomationTests/Measure-DesktopTelemetry.ps1 @params
+      - name: Upload desktop-device evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: desktop-device-${{ inputs.dpi }}-percent
+          path: |
+            artifacts/ui-tests/
+            artifacts/tests/desktop-telemetry.json
+          if-no-files-found: ignore

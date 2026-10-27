@@ -41,7 +41,12 @@ public sealed class CppLanguagePackage : ILanguagePackage
             regs.Add(service.RegisterDefinitionProvider(selector, engine));
             regs.Add(service.RegisterReferenceProvider(selector, engine));
             regs.Add(service.RegisterDocumentDiagnosticsProvider(selector, engine));
-            var formatter = new BasicSourceFormattingProvider(BasicSourceFormattingMode.BraceLanguage);
+            regs.Add(service.RegisterSignatureHelpProvider(selector, engine));
+            regs.Add(service.RegisterRenameProvider(selector, engine));
+            regs.Add(service.RegisterCodeActionProvider(selector, engine));
+            // Formatting comes from LLVM clang-format, not libclang's parsing API.
+            // Never rewrite C++ with a brace-counting fallback when clang-format is absent.
+            var formatter = new CppClangFormatProvider(Options.ClangFormatPath, Options.ToolchainRoot);
             regs.Add(service.RegisterDocumentFormattingEditProvider(selector, formatter));
             regs.Add(service.RegisterDocumentRangeFormattingEditProvider(selector, formatter));
             return regs;

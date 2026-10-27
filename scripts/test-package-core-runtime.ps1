@@ -10,7 +10,7 @@ $core = Join-Path $root 'tests\PackageConsumerSmoke\CoreConsumer\CoreConsumer.cs
 # Run the already-built console app directly (no further restore, no implicit
 # dotnet-run launch behavior). Keep the output even if Windows displays a
 # headless dialog or stalls in DLL loading, and kill it after a short timeout.
-$consumerDir = Join-Path (Split-Path -Parent $core) "bin\x64\$Configuration\net8.0-windows10.0.26100.0\win-x64"
+$consumerDir = Join-Path (Split-Path -Parent $core) "bin\x64\$Configuration\net10.0-windows10.0.26100.0\win-x64"
 $consumerExe = Join-Path $consumerDir 'CoreConsumer.exe'
 $consumerDll = Join-Path $consumerDir 'MonacoNative.Core.Native.dll'
 foreach ($required in @($consumerExe, $consumerDll)) {

@@ -38,7 +38,16 @@ assert 'LanguageServerLauncher' not in source_sample
 assert '_sampleLanguageServer' not in source_sample
 assert 'MONACO_' not in source_sample
 assert 'nativePortWarning' not in source_sample, 'sample must not show the source-port warning in the status bar'
-assert 'GetNativePortStatus' in source_sample
+assert 'GetNativePortStatus' not in source_sample, 'host must not inspect language package internals'
+# The shortcut picker belongs to SampleApp, but its captions are localized and
+# switching UI language must not silently reset the active renderer keymap.
+assert 'x:Name="KeyboardShortcutsHeader"' in (app_dir / 'MainWindow.xaml').read_text(encoding='utf-8')
+assert 'ShortcutSchemeOption' in source_sample
+assert 'RefreshShortcutSchemeOptions();' in source_sample
+assert 'Editor.ShortcutScheme = option.Value' in source_sample
+assert 'var selectedScheme = Editor.ShortcutScheme' in source_sample
+assert 'Editor.TryGetLanguageStatus(out var language)' in source_sample
+assert 'public bool TryGetLanguageStatus(out EditorLanguageStatus status)' in (renderer / 'MonacoEditor.Status.cs').read_text()
 assert 'SampleBox.SelectedIndex = 2' in source_sample, 'initial example must remain the preformatted C# sample'
 for name in ('demo.html','demo.js','demo.cs','demo.cpp','demo.json','demo.css','demo.ts'):
     assert (app_dir / 'Assets/Samples' / name).is_file(), name
@@ -108,7 +117,8 @@ assert not (root / 'src/MonacoNative.SampleApp/DemoSampleFormattingProvider.cs')
 print('PASS: language-package formatting providers replace sample-only formatters')
 
 sample_keys = {
-    'viewOptions','example','commandAccess','commandAccessDescription','findButton','replaceButton',
+    'viewOptions','example','commandAccess','commandAccessDescription','keyboardShortcuts','shortcuts.vscode',
+    'shortcuts.visualStudio','findButton','replaceButton',
     'advancedPolicy','advancedPolicyDescription','languageServices','modeBoth','modeShortcut',
     'modeDisabled','profileOn','profileOff','formatButton','formatError','languageStatus',
     'highlightOn','highlightOff','nativeInProcess','nativePartial','nativeBaseline','nativeComplete','nativePortWarning','profileSuccess','profileError',
@@ -121,6 +131,16 @@ for culture in ('en-US','zh-CN','ja-JP','ko-KR'):
     missing={f'monacoNative.sample.{key}' for key in sample_keys} | {f'monacoNative.find.{key}' for key in find_keys}
     assert not (missing - data.keys()), f'{culture} missing translations: {missing - data.keys()}'
     assert all(bool(value.strip()) for value in data.values()), f'{culture}: empty translations'
+# Scroll extent is owned by the renderer, not by the SampleApp parent layout.
+editor_xaml = (renderer / 'MonacoEditor.xaml').read_text(encoding='utf-8')
+scroll_source = (renderer / 'EditorScrollMetrics.cs').read_text(encoding='utf-8')
+assert 'HorizontalScrollMode="Auto"' in editor_xaml
+assert 'LayoutUpdated="ScrollHost_LayoutUpdated"' in editor_xaml
+assert 'EditorScrollMetrics.ExtentWidth(' in source
+assert 'ScrollHost.ViewportWidth' in source
+assert 'if (wordWrap)' in scroll_source and 'return viewport;' in scroll_source
+assert 'ScrollExtent.Width = contentWidth;' not in source
+print('PASS: renderer-owned viewport extent and localized keyboard shortcut picker')
 print('PASS: compact find placement, minimap protection, localized view options and toggle defaults')
 
 # Both new engines must remain in-process and inside the existing native project.

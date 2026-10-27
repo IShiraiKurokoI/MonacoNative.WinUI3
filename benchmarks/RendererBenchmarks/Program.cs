@@ -225,10 +225,12 @@ internal static class Program
         using var cache = new LineLayoutCache(device, format, capacity: 1024);
         using var target = new CanvasRenderTarget(device, 1200, 900, 96);
         ulong checksum = 0;
+        var frameDurations = new double[frames];
 
         var start = Stopwatch.GetTimestamp();
         for (var frame = 0; frame < frames; ++frame)
         {
+            var frameStart = Stopwatch.GetTimestamp();
             var first = 1 + frame * 3;
             var context = new EditorViewPartContext(first, first + VisibleLines - 1, frame * 66, 0, 1200, 900);
             selection.Prepare(device, context);
@@ -252,6 +254,7 @@ internal static class Program
             brackets.Composite(ds);
             overview.Composite(ds);
             caret.Composite(ds);
+            frameDurations[frame] = ElapsedMilliseconds(frameStart);
         }
         var elapsed = ElapsedMilliseconds(start);
         var layoutStats = cache.Statistics;
@@ -264,6 +267,9 @@ internal static class Program
             {
                 ["elapsed_ms"] = elapsed,
                 ["ms_per_frame"] = elapsed / frames,
+                ["p95_frame_ms"] = Percentile(frameDurations, 0.95),
+                ["p99_frame_ms"] = Percentile(frameDurations, 0.99),
+                ["process_peak_working_set_mb"] = Process.GetCurrentProcess().PeakWorkingSet64 / (1024.0 * 1024.0),
             },
             new()
             {
@@ -282,15 +288,18 @@ internal static class Program
     {
         using var cache = new LineLayoutCache(device, format, capacity: 1024);
         var checksum = 0UL;
+        var viewportDurations = new double[steps];
         var start = Stopwatch.GetTimestamp();
         for (var step = 0; step < steps; ++step)
         {
+            var viewportStart = Stopwatch.GetTimestamp();
             var first = 1 + step * 3;
             for (var line = first; line < first + VisibleLines; ++line)
             {
                 var layout = cache.GetOrCreate(line, LineText(line), 22);
                 checksum += (ulong)Math.Round(layout.LayoutBoundsIncludingTrailingWhitespace.Width);
             }
+            viewportDurations[step] = ElapsedMilliseconds(viewportStart);
         }
         var elapsed = ElapsedMilliseconds(start);
         var stats = cache.Statistics;
@@ -300,6 +309,8 @@ internal static class Program
             {
                 ["elapsed_ms"] = elapsed,
                 ["us_per_viewport"] = elapsed * 1000.0 / steps,
+                ["p95_viewport_ms"] = Percentile(viewportDurations, 0.95),
+                ["p99_viewport_ms"] = Percentile(viewportDurations, 0.99),
             },
             new()
             {
@@ -451,6 +462,15 @@ internal static class Program
     }
 
     private static string LineText(int line) => $"    line {line:D6} alpha beta gamma delta epsilon";
+
+    // Nearest-rank percentiles keep the raw measurements visible without a wall-clock gate.
+    private static double Percentile(double[] measurements, double rank)
+    {
+        var ordered = (double[])measurements.Clone();
+        Array.Sort(ordered);
+        var index = Math.Clamp((int)Math.Ceiling(ordered.Length * rank) - 1, 0, ordered.Length - 1);
+        return ordered[index];
+    }
 
     private static double ElapsedMilliseconds(long start) =>
         (Stopwatch.GetTimestamp() - start) * 1000.0 / Stopwatch.Frequency;

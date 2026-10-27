@@ -44,10 +44,11 @@
                           Background="Transparent"
                           HorizontalScrollBarVisibility="Auto"
                           VerticalScrollBarVisibility="Auto"
-                          HorizontalScrollMode="Enabled"
+                          HorizontalScrollMode="Auto"
                           VerticalScrollMode="Enabled"
                           ZoomMode="Disabled"
-                          ViewChanged="ScrollHost_ViewChanged">
+                          ViewChanged="ScrollHost_ViewChanged"
+                          LayoutUpdated="ScrollHost_LayoutUpdated">
                 <Grid x:Name="ScrollExtent" Width="1" Height="1" Background="Transparent" />
             </ScrollViewer>
 

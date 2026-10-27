@@ -23,6 +23,14 @@ public sealed partial class MonacoEditor
     private IReadOnlyDictionary<int, IReadOnlyList<SemanticToken>> _semanticTokensByLine = new Dictionary<int, IReadOnlyList<SemanticToken>>();
 
     private CancellationTokenSource? _nativeDiagnosticsCts;
+    private long _semanticTokensRequestSequence;
+    private long _inlayHintsRequestSequence;
+
+    private void InvalidateLanguageFeatureRequests()
+    {
+        ++_semanticTokensRequestSequence;
+        ++_inlayHintsRequestSequence;
+    }
     private Task? _nativeDiagnosticsTask;
     public Exception? LastNativeLanguageServiceError { get; private set; }
     public event EventHandler? NativeLanguageServiceFailed;
@@ -112,9 +120,14 @@ public sealed partial class MonacoEditor
             CancelNativeDiagnostics();
             CancelAutomaticSuggestions();
             HideSuggestWidget();
+            HideParameterHints();
             CancelSnippetSession();
+            InvalidateLanguageFeatureRequests();
+            DetachLspBindingForDocumentChange();
             _languages.ClearDiagnostics(_languageDocument.Uri);
             _languageDocument.Uri = value;
+            ClearSemanticTokens();
+            ClearLanguageInlayHints();
             ScheduleFoldingRefresh();
             _languageDiagnostics = Array.Empty<LanguageDiagnostic>();
             _languageDiagnosticIndex = LineRangeIndex<LanguageDiagnostic>.Empty;
@@ -165,23 +178,26 @@ public sealed partial class MonacoEditor
 
     public async Task<SemanticTokens?> RefreshSemanticTokensAsync(CancellationToken cancellationToken = default)
     {
-        var version = _model.VersionId;
-        var result = await _languages.ProvideDocumentSemanticTokensAsync(_languageDocument, cancellationToken);
-        if (_model.VersionId != version) return result;
+        var request = ++_semanticTokensRequestSequence;
+        var snapshot = LanguageModelSnapshot.Capture(_languageDocument);
+        var result = await _languages.ProvideDocumentSemanticTokensAsync(snapshot, cancellationToken).ConfigureAwait(true);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_disposed || request != _semanticTokensRequestSequence || !snapshot.Matches(_languageDocument)) return result;
         _semanticTokensByLine = result?.Tokens
             .GroupBy(token => token.LineNumber)
             .ToDictionary(group => group.Key, group => (IReadOnlyList<SemanticToken>)group.OrderBy(token => token.StartColumn).ToArray())
             ?? new Dictionary<int, IReadOnlyList<SemanticToken>>();
         _layoutCache?.Clear();
-        Render(RenderDirty.Text);
+        if (_loaded) Render(RenderDirty.Text);
         return result;
     }
 
     public void ClearSemanticTokens()
     {
+        ++_semanticTokensRequestSequence;
         _semanticTokensByLine = new Dictionary<int, IReadOnlyList<SemanticToken>>();
         _layoutCache?.Clear();
-        Render(RenderDirty.Text);
+        if (_loaded && !_disposed) Render(RenderDirty.Text);
     }
 
     public ValueTask<SignatureHelp?> ProvideSignatureHelpAsync(SignatureHelpContext? context = null, CancellationToken cancellationToken = default) =>
@@ -195,15 +211,18 @@ public sealed partial class MonacoEditor
 
     public async ValueTask<IReadOnlyList<InlayHint>> RefreshInlayHintsAsync(MonacoRange? range = null, CancellationToken cancellationToken = default)
     {
+        var request = ++_inlayHintsRequestSequence;
+        var snapshot = LanguageModelSnapshot.Capture(_languageDocument);
+        var source = range ?? new MonacoRange(1, 1, snapshot.LineCount, snapshot.GetLineMaxColumn(snapshot.LineCount));
+        var hints = await _languages.ProvideInlayHintsAsync(snapshot, ToLanguageRange(source), cancellationToken).ConfigureAwait(true);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_disposed || request != _inlayHintsRequestSequence || !snapshot.Matches(_languageDocument)) return hints;
+        // Keep the previous hints until the replacement is ready. An older or
+        // canceled request must never erase the newest document's projections.
         ClearLanguageInlayHintsCore();
-        var version = _model.VersionId;
-        var source = range ?? new MonacoRange(1, 1, checked((int)_model.LineCount), _model.GetLineMaxColumn(checked((int)_model.LineCount)));
-        var hints = await _languages.ProvideInlayHintsAsync(_languageDocument, ToLanguageRange(source), cancellationToken).ConfigureAwait(true);
-        if (_model.VersionId != version) return hints;
         var order = 10_000;
         foreach (var hint in hints)
         {
-            cancellationToken.ThrowIfCancellationRequested();
             var position = Normalize(hint.Position.LineNumber, hint.Position.Column);
             var label = (hint.PaddingLeft ? " " : string.Empty) + hint.Label + (hint.PaddingRight ? " " : string.Empty);
             var id = _view.AddInjectedText(position, label, MonacoInjectedTextAffinity.MoveAfterInsertion, order++);
@@ -215,8 +234,9 @@ public sealed partial class MonacoEditor
 
     public void ClearLanguageInlayHints()
     {
+        ++_inlayHintsRequestSequence;
         ClearLanguageInlayHintsCore();
-        AfterProjectionChanged(false);
+        if (!_disposed) AfterProjectionChanged(false);
     }
 
     public async ValueTask ApplyCodeActionAsync(CodeAction action, CancellationToken cancellationToken = default)

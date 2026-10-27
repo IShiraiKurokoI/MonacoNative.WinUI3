@@ -1,0 +1,16 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!-- Invoke the exact shipping inline validator from MSBuild, not a reimplementation.
+       The no-compile Publish target models a --no-build deployment validation. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <MonacoNativeValidateCore>true</MonacoNativeValidateCore>
+  </PropertyGroup>
+  <Import Project="../../packaging/buildTransitive/MonacoNative.ClangRuntime.targets" />
+  <Target Name="ValidateFixture">
+    <MonacoNative.Build.MonacoNativeValidateBinary FilePath="$(BinaryPath)"
+        Platform="$(TargetPlatform)" RequiredExports="$(RequiredExport)" />
+  </Target>
+  <Target Name="Publish">
+    <Message Text="Fixture Publish without compilation (simulates --no-build)" Importance="high" />
+  </Target>
+</Project>

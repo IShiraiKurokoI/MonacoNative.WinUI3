@@ -12,7 +12,7 @@ I distinguish a familiar editing experience from a complete upstream reimplement
 
 ### A C++20 core and a C# host
 
-Text state, PieceTree storage, edit transactions, undo/redo, cursors, and view projection live in the C++20 core. WinUI accesses the same document through a C ABI and a .NET 8 wrapper.
+Text state, PieceTree storage, edit transactions, undo/redo, cursors, and view projection live in the C++20 core. WinUI accesses the same document through a C ABI and a .NET 10 wrapper.
 
 The C++ core is tested independently from WinUI lifetime code. The current core ABI is **1.4.0**, with **93 contracted exports**; the language extension ABI is separately versioned as 1. When an interface changes, I update declarations, managed mappings, and tests together. I do not rely on mixing DLLs from different builds. See [Native ABI](NATIVE_ABI.md).
 
@@ -137,3 +137,18 @@ The default path has no WebView2, hidden TextBox backing store, Node / tsserver,
 Completion, snippets, Codicon, and ranking are implemented but do not promise pixel-level or complete behavioral parity with VS Code. Public semantic-token, code-action, inlay-hint, and rename interfaces do not imply implementations for every built-in language.
 
 JavaScript and TypeScript target basic syntax and everyday editing. Complex package resolution and the full TypeScript project system are outside the current scope.
+
+## Host status queries and editor lifetime
+
+`MonacoEditor.TryGetDocumentStatus` returns versioned length, line count and
+Unicode-scalar character count. Character counts are cached by model version.
+`TryGetLanguageStatus` reports tokenizer availability and the active package's
+port status. Both methods return `false` once editor shutdown begins, rather
+than allowing a host status-bar event to access a disposed native text model.
+These are renderer APIs; host applications are responsible only for presenting
+status and explicitly disposing the control when their window closes.
+
+Context-menu accelerator labels are resolved in `EditorCommandService` from
+the active shortcut profile or host override. `EditorShortcutLabelFormatter`
+provides the shared chord-to-display conversion; sample applications do not
+implement keybinding resolution or label formatting.

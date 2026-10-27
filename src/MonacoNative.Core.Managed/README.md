@@ -17,7 +17,7 @@ Current managed API includes:
 The package contains:
 
 ```text
-lib/net8.0-windows10.0.26100.0/MonacoNative.Core.Managed.dll
+lib/net10.0-windows10.0.26100.0/MonacoNative.Core.Managed.dll
 runtimes/win-x64/native/MonacoNative.Core.Native.dll
 ```
 

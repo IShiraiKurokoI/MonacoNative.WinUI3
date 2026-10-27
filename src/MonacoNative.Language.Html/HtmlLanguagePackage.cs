@@ -31,6 +31,13 @@ public sealed class HtmlLanguagePackage : ILanguagePackage
             regs.Add(service.RegisterHoverProvider(LanguageSelector.ForLanguage("html"), native));
             regs.Add(service.RegisterFoldingRangeProvider(LanguageSelector.ForLanguage("html"), new HtmlFolding()));
             regs.Add(service.RegisterRenameProvider(LanguageSelector.ForLanguage("html"), new HtmlTagRenameProvider()));
+            // Embedded providers use the host registry; this package does not force JS/CSS dependencies.
+            var embedded = new HtmlEmbeddedLanguageService(service);
+            regs.Add(service.RegisterDocumentDiagnosticsProvider(LanguageSelector.ForLanguage("html"), embedded));
+            regs.Add(service.RegisterDocumentSemanticTokensProvider(LanguageSelector.ForLanguage("html"), embedded));
+            var validation = new HtmlValidationAndActions(Data);
+            regs.Add(service.RegisterDocumentDiagnosticsProvider(LanguageSelector.ForLanguage("html"), validation));
+            regs.Add(service.RegisterCodeActionProvider(LanguageSelector.ForLanguage("html"), validation));
             var formatter = new BasicSourceFormattingProvider(BasicSourceFormattingMode.Html);
             regs.Add(service.RegisterDocumentFormattingEditProvider(LanguageSelector.ForLanguage("html"), formatter));
             regs.Add(service.RegisterDocumentRangeFormattingEditProvider(LanguageSelector.ForLanguage("html"), formatter));

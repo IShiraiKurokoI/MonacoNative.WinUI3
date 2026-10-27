@@ -79,6 +79,7 @@ public sealed class LspEditorBinding : IAsyncDisposable, IDisposable
 public sealed partial class MonacoEditor
 {
     private LspEditorBinding? _lspBinding;
+    private long _lspBindingRequestSequence;
     private CancellationTokenSource? _lspRefreshCts;
     private Task? _lspRefreshTask;
     private readonly DispatcherTimer _lspRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(180) };
@@ -126,8 +127,17 @@ public sealed partial class MonacoEditor
     {
         ArgumentNullException.ThrowIfNull(client);
         await DetachLanguageServerAsync().ConfigureAwait(true);
+        var request = ++_lspBindingRequestSequence;
+        var uri = DocumentUri;
+        var language = LanguageId;
         selector ??= new LanguageSelector(Language: "*");
-        _lspBinding = await LspEditorBinding.AttachAsync(client, _languages, _model, DocumentUri, selector, cancellationToken).ConfigureAwait(true);
+        var pending = await LspEditorBinding.AttachAsync(client, _languages, _model, uri, selector, cancellationToken).ConfigureAwait(true);
+        if (_disposed || request != _lspBindingRequestSequence || uri != DocumentUri || language != LanguageId)
+        {
+            await pending.DisposeAsync().ConfigureAwait(true);
+            throw new OperationCanceledException("The editor document changed during language server attachment.");
+        }
+        _lspBinding = pending;
         try
         {
             await RefreshSemanticTokensAsync(cancellationToken).ConfigureAwait(true);
@@ -147,6 +157,11 @@ public sealed partial class MonacoEditor
 
     public async Task DetachLanguageServerAsync()
     {
+        ++_lspBindingRequestSequence;
+        InvalidateLanguageFeatureRequests();
+        CancelAutomaticSuggestions();
+        HideSuggestWidget();
+        HideParameterHints();
         _lspRefreshTimer.Stop();
         _lspRefreshCts?.Cancel();
         _lspRefreshCts?.Dispose();
@@ -191,14 +206,22 @@ public sealed partial class MonacoEditor
         }
     }
 
-    private void DisposeLspBinding()
+    private void DetachLspBindingForDocumentChange()
     {
+        ++_lspBindingRequestSequence;
         _lspRefreshTimer.Stop();
-        _lspRefreshTimer.Tick -= LspRefreshTimer_Tick;
         _lspRefreshCts?.Cancel();
         _lspRefreshCts?.Dispose();
         _lspRefreshCts = null;
-        _lspBinding?.Dispose();
+        var binding = _lspBinding;
         _lspBinding = null;
+        binding?.Dispose();
+    }
+
+    private void DisposeLspBinding()
+    {
+        DetachLspBindingForDocumentChange();
+        _lspRefreshTimer.Stop();
+        _lspRefreshTimer.Tick -= LspRefreshTimer_Tick;
     }
 }

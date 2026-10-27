@@ -10,6 +10,7 @@ $root = Split-Path -Parent $PSScriptRoot
 $nugetConfig = Join-Path $root 'tests\PackageConsumerSmoke\NuGet.Config'
 $core = Join-Path $root 'tests\PackageConsumerSmoke\CoreConsumer\CoreConsumer.csproj'
 $winui = Join-Path $root 'tests\PackageConsumerSmoke\WinUIConsumer\WinUIConsumer.csproj'
+$example = Join-Path $root 'examples\NuGetWinUI3\MonacoNative.NuGetExample.csproj'
 
 foreach ($platform in @('x64','ARM64')) {
     Write-Host "Restoring/building package consumers for $platform"
@@ -21,6 +22,12 @@ foreach ($platform in @('x64','ARM64')) {
     dotnet restore $winui --configfile $nugetConfig -p:Platform=$platform -p:MonacoNativePackageVersion=$Version
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
     dotnet build $winui -c $Configuration --no-restore -p:Platform=$platform -p:MonacoNativePackageVersion=$Version
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+    # Public example must also compile as a package-only consumer, not just the smoke fixture.
+    dotnet restore $example --configfile $nugetConfig -p:Platform=$platform -p:MonacoNativePackageVersion=$Version
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    dotnet build $example -c $Configuration --no-restore -p:Platform=$platform -p:MonacoNativePackageVersion=$Version
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
     if ($platform -eq 'x64') {

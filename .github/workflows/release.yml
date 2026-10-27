@@ -4,21 +4,25 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: NuGet version
+        description: NuGet version with an approved Windows acceptance record
         required: true
         default: 0.1.0
   push:
     tags:
       - 'v*'
 
+permissions:
+  contents: read
+
 jobs:
-  package:
+  desktop-release-gate:
+    name: Mandatory Windows tests and approved manual evidence
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '10.0.x'
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
@@ -31,20 +35,32 @@ jobs:
           } else {
             $v = '${{ github.ref_name }}'.TrimStart('v')
           }
+          if ($v -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$') {
+            throw "Invalid NuGet version: $v"
+          }
           "version=$v" >> $env:GITHUB_OUTPUT
-      - name: Build x64 and ARM64 NuGet packages
+      - name: Install pinned Windows App Runtime for headless Win2D
         shell: pwsh
-        run: ./scripts/pack-windows.ps1 -Configuration Release -Version '${{ steps.version.outputs.version }}'
-      - name: Test managed NuGet consumers and WinUI resources
+        run: ./scripts/install-windows-app-runtime-ci.ps1
+      - name: Validate native, WinUI, render baseline, packaging and human acceptance
         shell: pwsh
-        run: ./scripts/test-package-managed-consumers.ps1 -Configuration Release -Version '${{ steps.version.outputs.version }}'
-      - name: Test C++/WinRT NuGet consumers
-        shell: pwsh
-        run: ./scripts/test-package-cpp-consumers.ps1 -Configuration Release -Version '${{ steps.version.outputs.version }}'
-      - name: Smoke test native core package runtime
-        shell: pwsh
-        run: ./scripts/test-package-core-runtime.ps1 -Configuration Release -Version '${{ steps.version.outputs.version }}'
-      - uses: actions/upload-artifact@v6
+        run: ./scripts/test-acceptance.ps1 -Mode Release -Configuration Release -PackageVersion '${{ steps.version.outputs.version }}'
+      - name: Upload release gate and failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-validation-${{ steps.version.outputs.version }}
+          path: |
+            artifacts/release/
+            artifacts/benchmarks/
+            artifacts/ci-diagnostics/
+            artifacts/render-goldens/
+            artifacts/logs/
+            build-core/ctest-results.xml
+          if-no-files-found: ignore
+      - name: Upload release NuGet packages (only after full gate)
+        if: success()
+        uses: actions/upload-artifact@v6
         with:
           name: MonacoNative-${{ steps.version.outputs.version }}
           path: |

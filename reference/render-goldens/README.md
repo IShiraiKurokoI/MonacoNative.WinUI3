@@ -1,7 +1,13 @@
-# Windows renderer golden image workflow
+# Windows Win2D reference captures
 
-`tests/RendererGoldenTests` renders a fixed globalization corpus through Win2D/DirectWrite on a forced software `CanvasDevice` at 96 DPI. The normal Windows CI gate performs two renders in one process, requires a non-empty image, requires bit-for-bit determinism, and uploads the resulting JSON pixel fingerprint.
+The renderer probe draws a fixed sample containing Latin and CJK text, right-to-left text, emoji, selection colors, and a caret primitive. It runs at 96, 120, 144, and 192 DPI, writing both PNG captures and JSON fingerprints. This probe tests a small DirectWrite/Win2D surface, not the complete MonacoEditor control. UI and IME rendering are reviewed during desktop acceptance.
 
-A checked-in baseline is intentionally **not fabricated on non-Windows hosts**. To freeze a Windows image after reviewing it, run the probe on the supported Windows image, copy the generated JSON here, and pass it back with `--baseline <file>`. The harness then becomes an exact golden comparison. If the CI image or system fonts are intentionally upgraded, record and review a new baseline rather than silently accepting the change.
+No reference images or fingerprints are generated in the repository. Each reference must come from a real Windows run and be reviewed before it is checked in.
 
-The corpus covers ASCII source code, combining marks, CJK, Hangul, emoji/ZWJ, Hebrew/Arabic mixed-direction text and editor punctuation.
+1. On the designated Windows x64 test machine, run `./scripts/test-renderer-golden.ps1 -Configuration Release`.
+2. Inspect the four PNG files at `artifacts/render-goldens/renderer-current-<dpi>dpi.png`. Record the Windows build, font configuration, graphics environment, and reviewer alongside the release acceptance evidence.
+3. For each approved capture, copy `artifacts/render-goldens/renderer-current-<dpi>dpi.json` to `reference/render-goldens/windows-x64-<dpi>dpi.json`, substituting 96, 120, 144, and 192. Keep the fingerprints unchanged and commit all four approved files.
+4. Run `./scripts/test-renderer-golden.ps1 -Configuration Release -RequireBaseline` to compare the geometry, sample metadata, ink counts, and complete pixel hash for every DPI.
+5. Review and replace affected baselines when the renderer, operating system, fonts, or test environment changes intentionally.
+
+Unattended runs capture the current images, and compare any approved references already present. Release mode requires all four reviewed references. Repeatability without an approved reference does not count as visual regression approval.

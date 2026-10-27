@@ -21,6 +21,86 @@ internal sealed class EditorCommandService : IDisposable
     private readonly MonacoLocalizationService _localization;
     private readonly Dictionary<string, EditorCommandDefinition> _commands = new(StringComparer.Ordinal);
     private readonly Dictionary<string, List<ulong>> _bindingTokens = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IReadOnlyList<EditorShortcutBinding>> _overrides = new(StringComparer.Ordinal);
+    public EditorShortcutScheme ShortcutScheme { get; private set; } = EditorShortcutScheme.VSCode;
+
+    public void SetShortcutScheme(EditorShortcutScheme scheme)
+    {
+        if (!Enum.IsDefined(scheme)) throw new ArgumentOutOfRangeException(nameof(scheme));
+        if (ShortcutScheme == scheme) return;
+        var previous = ShortcutScheme;
+        ShortcutScheme = scheme;
+        try { RebuildBindings(); }
+        catch
+        {
+            ShortcutScheme = previous;
+            RebuildBindings();
+            throw;
+        }
+    }
+
+    // An empty override removes all shortcuts for this command without disabling its menu action.
+    // Revert a rejected chord atomically; a host typo must not unbind the editor.
+    public void SetShortcutOverride(string id, IReadOnlyList<EditorShortcutBinding>? shortcuts)
+    {
+        if (!_commands.ContainsKey(id)) throw new ArgumentException($"Unknown editor command: {id}", nameof(id));
+        EditorShortcutBinding[]? replacement = null;
+        if (shortcuts is not null)
+        {
+            replacement = shortcuts.ToArray();
+            foreach (var shortcut in replacement)
+                if (shortcut is null || string.IsNullOrWhiteSpace(shortcut.Chord))
+                    throw new ArgumentException("A shortcut chord must not be empty.", nameof(shortcuts));
+        }
+
+        var hadPrevious = _overrides.TryGetValue(id, out var previous);
+        if (replacement is null) _overrides.Remove(id);
+        else _overrides[id] = replacement;
+        try { RebuildBindings(); }
+        catch
+        {
+            if (hadPrevious) _overrides[id] = previous!;
+            else _overrides.Remove(id);
+            RebuildBindings();
+            throw;
+        }
+    }
+
+    public IReadOnlyList<EditorKeybinding> EffectiveBindings(string id)
+    {
+        if (!_commands.TryGetValue(id, out var command)) return Array.Empty<EditorKeybinding>();
+        if (_overrides.TryGetValue(id, out var bindings))
+            return bindings.Select(b => new EditorKeybinding(b.Chord, b.Weight, b.When)).ToArray();
+        var mapped = EditorShortcutProfiles.Resolve(ShortcutScheme, id);
+        return mapped is null ? command.Keybindings : mapped.Select(chord => new EditorKeybinding(chord, 400)).ToArray();
+    }
+
+    private void RebuildBindings()
+    {
+        ResetChord();
+        foreach (var tokens in _bindingTokens.Values)
+            foreach (var token in tokens) _keybindings.Unregister(token);
+        _bindingTokens.Clear();
+        foreach (var command in _commands.Values)
+            BindCommand(command);
+    }
+
+    private void BindCommand(EditorCommandDefinition command)
+    {
+        var tokens = new List<ulong>();
+        try
+        {
+            foreach (var binding in EffectiveBindings(command.Id))
+                tokens.Add(_keybindings.Register(command.Id, binding.Chord,
+                    CombineWhen(command.When, binding.When), binding.Weight));
+            _bindingTokens[command.Id] = tokens;
+        }
+        catch
+        {
+            foreach (var token in tokens) _keybindings.Unregister(token);
+            throw;
+        }
+    }
     private readonly Dictionary<string, object> _contextCache = new(StringComparer.Ordinal);
 
     // Evaluated only on an actual command dispatch, never on the ordinary printable-key fast path.
@@ -62,23 +142,8 @@ internal sealed class EditorCommandService : IDisposable
     {
         if (!_commands.TryAdd(command.Id, command))
             throw new InvalidOperationException($"Command '{command.Id}' is already registered.");
-        var tokens = new List<ulong>();
-        try
-        {
-            foreach (var binding in command.Keybindings)
-            {
-                var when = CombineWhen(command.When, binding.When);
-                tokens.Add(_keybindings.Register(command.Id, binding.Chord, when, binding.Weight));
-            }
-            _bindingTokens[command.Id] = tokens;
-        }
-        catch
-        {
-            foreach (var token in tokens)
-                _keybindings.Unregister(token);
-            _commands.Remove(command.Id);
-            throw;
-        }
+        try { BindCommand(command); }
+        catch { _commands.Remove(command.Id); throw; }
     }
 
     public async ValueTask<bool> TryExecuteAsync(string commandId)
@@ -125,6 +190,16 @@ internal sealed class EditorCommandService : IDisposable
             .ToArray();
 
 
+    // The menu always displays the active profile or host override, not the
+    // command's original default chord. Formatting stays with command bindings.
+    public string GetShortcutLabel(EditorCommandDefinition command)
+    {
+        var preferred = EffectiveBindings(command.Id)
+            .OrderByDescending(binding => binding.Weight)
+            .FirstOrDefault();
+        return EditorShortcutLabelFormatter.Format(preferred.Chord);
+    }
+
     public string GetLabel(EditorCommandDefinition command) => _localization.GetString(command.LabelKey);
     public string GetCategory(EditorCommandDefinition command) => _localization.GetString(command.CategoryKey);
 
@@ -134,6 +209,7 @@ internal sealed class EditorCommandService : IDisposable
             foreach (var token in tokens)
                 _keybindings.Unregister(token);
         _bindingTokens.Clear();
+        _overrides.Clear();
         _commands.Clear();
         _contextCache.Clear();
         _keybindings.Dispose();

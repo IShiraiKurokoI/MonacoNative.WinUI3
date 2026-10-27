@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
@@ -14,5 +14,7 @@
     <Compile Include="..\..\src\MonacoNative.Renderer.WinUI3\EditorMethodProfiler.cs" Link="EditorMethodProfiler.cs" />
     <Compile Include="..\..\src\MonacoNative.Renderer.WinUI3\EditorFindEngine.cs" Link="EditorFindEngine.cs" />
     <Compile Include="..\..\src\MonacoNative.Renderer.WinUI3\SuggestionSelection.cs" Link="SuggestionSelection.cs" />
+    <Compile Include="..\..\src\MonacoNative.Renderer.WinUI3\EditorShortcutProfiles.cs" Link="EditorShortcutProfiles.cs" />
+    <Compile Include="..\..\src\MonacoNative.Renderer.WinUI3\EditorScrollMetrics.cs" Link="EditorScrollMetrics.cs" />
   </ItemGroup>
 </Project>

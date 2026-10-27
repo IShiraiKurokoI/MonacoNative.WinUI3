@@ -19,12 +19,12 @@
           CopyToPublishDirectory="PreserveNewest"
           Visible="false"
           Condition="Exists('$(MSBuildThisFileDirectory)..\..\runtimes\win-$(_MonacoNativeArch)\native\MonacoNative.Core.Native.dll')" />
-    <None Include="$(MSBuildThisFileDirectory)..\..\lib\net8.0-windows10.0.26100.0\*.pri"
+    <None Include="$(MSBuildThisFileDirectory)..\..\lib\net10.0-windows10.0.26100.0\*.pri"
           Link="%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest"
           CopyToPublishDirectory="PreserveNewest"
           Visible="false" />
-    <None Include="$(MSBuildThisFileDirectory)..\..\lib\net8.0-windows10.0.26100.0\**\*.xbf"
+    <None Include="$(MSBuildThisFileDirectory)..\..\lib\net10.0-windows10.0.26100.0\**\*.xbf"
           Link="%(RecursiveDir)%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest"
           CopyToPublishDirectory="PreserveNewest"

@@ -16,7 +16,7 @@ using var registration = languages.Packages.Install(new JsonLanguagePackage());
 // await languages.ProvideCompletionItemsAsync(document, caret, new CompletionContext());
 ```
 
-Built-ins implement `ILanguagePackage`, register providers directly, and neither configure `Server` nor start external processes. `SourcePortStatus` is `PartialPort` for JSON / HTML / CSS / TS and `InProcessUpstream` for C# / C++. No package is marked `CompletePort`. JSX / TSX retain basic highlighting and keyword contributions only.
+Built-ins implement `ILanguagePackage` and register providers directly. Semantic language services do not require an external language-server process; optional C++ formatting invokes the locally installed `clang-format` tool. `SourcePortStatus` is `PartialPort` for JSON / HTML / CSS / TS and `InProcessUpstream` for C# / C++. No package is marked `CompletePort`. JSX / TSX retain basic highlighting and keyword contributions only.
 
 An authoritative provider's empty completion result is valid and does not get padded with fallback keywords. A missing native library produces an explicit diagnostic and permits existing fallback behavior; that fallback is not successful semantic analysis.
 
@@ -24,18 +24,18 @@ An authoritative provider's empty completion result is valid and does not get pa
 
 | Language | Current implementation | Main gaps |
 | --- | --- | --- |
-| JSON / JSONC | Scanner, tolerant tree, location/path helpers, document/range formatting, local edits, offline Schema completion/hover/diagnostics, folding | Full JSON Schema draft behavior and the complete upstream language service |
-| HTML | Scanner and tolerant tag tree; tag/attribute/value/closing-tag completion; custom data; hover; tag rename and paired ranges; folding; document/range formatting | Full default data, entities/paths, embedded script/style language services, live linked-editing UI |
+| JSON / JSONC | Scanner, tolerant tree, local formatting/edits, offline Schema completion/hover/diagnostics, folding; `oneOf`/`anyOf` validation, `if`/`then`/`else`, dependency rules, and conservative Schema-based quick fixes | Full JSON Schema draft behavior, evaluated/unevaluated vocabulary, and upstream branch scoring |
+| HTML | Tolerant tag tree, completion, custom data, hover, paired-tag rename/ranges, folding, formatting, embedded CSS/JS diagnostics and semantic token spans, enumerated-attribute warnings and quick fixes, and safe closing-tag repairs | Complete HTML data, advanced entity/path support, and a live paired-tag editing session in the editor UI |
 | CSS / SCSS / LESS | Three scanners, structural declaration tree, property/custom-variable completion, custom data, hover/definition, folding, document/range formatting; basic CSS diagnostics | Full upstream AST/semantics and dialect parsing, SCSS/LESS structural diagnostics |
-| JS / TS | C++ scanning/preprocessing; basic declarations/scopes/members; arrow functions; signature help; folding; lexical/bracket diagnostics; simple snapshot imports; document/range formatting for JS/TS | Basic syntax diagnostics are still limited. Complex package resolution, full type checking, and complete JSX/TSX semantics are outside the current scope. |
-| C# | In-process Roslyn completion, Quick Info, source definitions/references, formatting, compiler diagnostics, basic method-group signature help | Automatic MSBuild/project-reference/source-generator loading, metadata-as-source, full VS Code host integration |
-| C++ | In-process libclang completion, parameter snippets, diagnostics, hover, definitions, current-file references, unsaved headers, explicit compiler arguments, document/range formatting | Signature-help provider, project-wide index, automatic includes, refactoring |
+| JS / TS | C++ scanning/preprocessing; basic declarations/scopes/members; arrow functions; signature help; folding; lexical/bracket diagnostics; simple snapshot imports; document/range formatting for JS/TS | Basic syntax diagnostics are still limited. npm/package resolution, node_modules scanning, full type checking, and complete JSX/TSX semantics are outside the supported scope. |
+| C# | In-process Roslyn completion, Quick Info, source references, formatting, compiler diagnostics, signature help, symbol rename across supplied workspace snapshots, organize usings, duplicate-using quick fix, classified semantic tokens and optional parameter/inferred-local-type inlay hints | Full Roslyn code-fix catalog and solution/project loading, source generators, metadata-as-source, full VS integration |
+| C++ | In-process libclang completion, parameter snippets, diagnostics, hover, declaration/definition navigation, signature help and overloads, active-file references and rename, include diagnostics, missing-semicolon quick fix, explicit compile arguments and optional clang-format | Project-wide indexing/rename, automatic include insertion, and a full Clang code-fix engine |
 
-Formatting for HTML, CSS/SCSS/LESS, JS/TS, and C++ uses the shared line/brace formatter in `MonacoNative.Language`; JSON keeps its JSONC formatter and C# keeps Roslyn formatting. Semantic-token, inlay-hint, and code-action interfaces are available to hosts, while built-in implementations are still limited. HTML tag rename is connected to the built-in HTML package.
+Formatting for HTML, CSS/SCSS/LESS and JS/TS uses the shared line/brace formatter. C++ uses LLVM clang-format, JSON keeps its JSONC formatter, and C# uses Roslyn. Providers return ordinary workspace/text edits through the existing host APIs; changes to other files are only applied through the host workspace-edit callback.
 
 ## C#: official precompiled Roslyn
 
-`Microsoft.CodeAnalysis.CSharp.Features` is fixed at **[4.11.0]**, restored by NuGet and called in process. The source-ProjectReference switch has been removed. Neither Roslyn Language Server nor a .NET 10 runtime is required. Default parsing is C# 12; the host uses .NET 8.
+`Microsoft.CodeAnalysis.CSharp.Features` is fixed at **[4.11.0]**, restored by NuGet and called in process. The source-ProjectReference switch has been removed. No Roslyn Language Server process is required. The managed host targets .NET 10; the service currently uses C# 12 parsing defaults.
 
 `CSharpLanguagePackage.Options` accepts `CSharpLanguageOptions`:
 
@@ -48,9 +48,46 @@ Formatting for HTML, CSS/SCSS/LESS, JS/TS, and C++ uses the shared line/brace fo
 | `IncludeRuntimeReferences` | Include basic runtime references by default, enabling examples such as `Console.` |
 | `LanguageVersion` | Explicit parser language version |
 
-I do not silently parse `.csproj` files, traverse disk, or run source generators inside a request. Navigation returns actual source locations, not fabricated library source files. Signature help adapts method groups; it is not a port of Roslyn's complete internal signature service.
+The provider does not implicitly parse `.csproj` files, traverse disk, or execute source generators during a request. Navigation returns actual source locations, not fabricated library source files. Signature help adapts method groups; it is not a port of Roslyn's complete internal signature service.
+
+The rename provider uses `Renamer.RenameSymbolAsync` on the supplied in-memory Roslyn
+workspace, returning workspace edits only for known document URIs. The code-action
+provider offers source-level **Organize usings** and a conservative duplicate-using
+fix. It does not expose every Roslyn analyzer/code-fix provider. Roslyn classifications
+feed semantic tokens. Inlay hints are provided on request for positional call
+arguments and inferred local variable types; hosts choose when to refresh or display
+them. Signature overload matching uses Roslyn's existing semantic argument typing and
+the editor's active-argument selection.
 
 Completion acceptance requires Roslyn's authoritative resolved edits. Failed resolution does not fall back to inserting the display label. URI, language, version, or caret changes invalidate asynchronous results.
+
+## C++ formatting with LLVM clang-format
+
+`libclang` handles parsing and semantic analysis; it does not expose LLVM's
+LibFormat API. The C++ document/range formatting providers therefore use the
+standard `clang-format` executable with source passed through standard input.
+This does not modify files on disk, start a language server, or depend on a
+heuristic brace-counting formatter. The tool is optional and is not distributed
+with the `libclang.runtime` packages.
+
+Resolution order: `CppLanguageOptions.ClangFormatPath`, the
+`MONACONATIVE_CLANG_FORMAT` environment variable, an executable under
+`CppLanguageOptions.ToolchainRoot/bin`, and finally the process `PATH`.
+An absent tool returns no edits. The command uses `--style=file` and
+`--fallback-style=Microsoft`, honors the nearest `.clang-format` configuration,
+and uses `--lines=start:end` for range formatting. The document URI supplies
+the assumed filename and working directory. Configure `.clang-format` for
+indentation/style rather than relying on the generic formatting options.
+
+```csharp
+var package = new CppLanguagePackage
+{
+    Options = new CppLanguageOptions { ClangFormatPath = @"C:\LLVM\bin\clang-format.exe" }
+};
+```
+
+LLVM's [clang-format reference](https://clang.llvm.org/docs/ClangFormat.html)
+documents the command-line contract and available styles.
 
 ## C++: precompiled libclang and the existing bridge
 
@@ -58,13 +95,13 @@ Completion acceptance requires Roslyn's authoritative resolved edits. Failed res
 
 At runtime, the locator checks the application directory and `runtimes/win-{x64,arm64}/native/libclang.dll` against the current process architecture. `CppLanguageOptions.LibClangPath` / `MONACONATIVE_LIBCLANG` remain explicit overrides. Legacy `ToolchainRoot` and version/architecture receipts remain supported, but normal builds do not require GitHub checkouts or upstream compilation.
 
-Windows build and publish targets now inspect the deployed DLL's PE structure, selected architecture, and all 43 symbols required by the bridge. This is separate from the existing runtime check. It cannot prove loader dependencies, returned ABI values, or semantic behavior; see [building](BUILDING.md).
+Windows build and publish targets inspect the deployed DLL's PE structure, selected architecture, and all 51 symbols currently required by the bridge. This is separate from the existing runtime check. It cannot prove loader dependencies, returned ABI values, or semantic behavior; see [building](BUILDING.md).
 
 The NuGet runtime is not a complete C++ toolchain. `MonacoClangResourceDirectory` can supply matching resources, including `include/stddef.h`; the existing target copies them to `clang/lib/clang/17/include`. The host still supplies system/STL/project includes, macros, and target arguments.
 
 `CompilerArguments` defaults to `-xc++ -std=c++20`. `Documents` supplies URI-to-unsaved-source/header snapshots; `CompilerArgumentsProvider` can override per document. `CompilationDatabasePath` reads the **arguments array** form of `compile_commands.json`, strips compiler/output arguments, and preserves the working directory. It does not evaluate shell `command`, launchers, plugins / `-Xclang`, or response files. Use trusted explicit arguments for other configurations.
 
-Completion preserves Clang availability and priority, converts parameter chunks into numbered snippets, and maps kinds to existing Codicons. Navigation converts target-snapshot UTF-8 offsets to UTF-16, including CRLF and non-BMP characters. References are limited to the active file in the translation unit, not a project index. Cancellation prevents result application but does not forcibly interrupt synchronous libclang calls. Loading/configuration errors return `NATIVE_UNAVAILABLE`.
+Completion preserves Clang availability and priority, converts parameter chunks into numbered snippets, and maps kinds to existing Codicons. The signature provider queries libclang callables and overload cursors, returning parameter labels and the active argument index. Navigation returns available declarations and definitions. Rename only edits libclang-resolved references in the active file; it is not a workspace refactor. Clang reports missing includes via diagnostics; only conservative missing-semicolon diagnostics currently produce a quick fix. Navigation converts target-snapshot UTF-8 offsets to UTF-16, including CRLF and non-BMP characters. References are limited to the active file in the translation unit, not a project index. Cancellation prevents result application but does not forcibly interrupt synchronous libclang calls. Loading/configuration errors return `NATIVE_UNAVAILABLE`.
 
 The C++ sample avoids standard-library headers to make basic custom-member checks easier. Validate the actual Windows package through [required integration](TESTING.md); a Linux test using an installed libclang is not equivalent.
 
@@ -79,15 +116,15 @@ Formatting preserves comments, original tokens, and line endings. `FormattingOpt
 // package.Schemas.Register(schemaUri, schemaJson, filePatterns);
 ```
 
-Schema resolution uses only explicitly registered data. The implemented subset includes `$schema` selection, local JSON Pointers, references across registered schemas, type / properties / required / additionalProperties / patternProperties / items / prefixItems / enum / const / default, common string/numeric bounds, and allOf / anyOf / oneOf / not.
+Schema resolution uses only explicitly registered data. The implemented subset includes `$schema` selection, local JSON Pointers, references across registered schemas, type / properties / required / additionalProperties / patternProperties / items / prefixItems / enum / const / default, common string/numeric bounds, `allOf` / `anyOf` / `oneOf` / `not`, `if` / `then` / `else`, `dependentRequired` and `dependentSchemas`. Conditional branches are selected against the current document for nested completion and quick fixes. Quick fixes can insert required properties using Schema defaults or safe type fallbacks and can replace invalid enum/const values while retaining surrounding JSONC comments.
 
-Anchors/dynamic references, conditional and dependent/unevaluated constraints, format assertions, uniqueItems/contains, and other full vocabulary behavior remain missing. Completion merges possible branches rather than reproducing all upstream branch scoring. No automatic network or disk Schema loading occurs.
+Anchors/dynamic references, evaluated/unevaluated constraints, format assertions, uniqueItems/contains, and other full-vocabulary behavior remain missing. Completion merges possible branches rather than reproducing all upstream branch scoring. No automatic network or disk Schema loading occurs.
 
 ## HTML / CSS custom data and tag editing
 
 `HtmlLanguagePackage.Data.Register(customDataJson)` supports tags, attributes, and value sets. `CssLanguagePackage.Data.Register(customDataJson)` supports property descriptions and property-specific values. Default data is limited, not the complete upstream Web dataset.
 
-HTML pairing, linked ranges, and tag rename come from identified upstream modules. Computing linked ranges is not a live two-end editing UI. Embedded script/style content is excluded from tag completion, but not yet fully delegated to JS/CSS services.
+HTML pairing, linked ranges, and tag rename come from identified upstream modules. Computing linked ranges is not yet a live two-end editing UI. Embedded `<script>` and `<style>` regions delegate diagnostics and semantic tokens to registered JavaScript/CSS providers through virtual document snapshots. Standalone use falls back to bounded lexical highlighting. Embedded diagnostics are remapped to HTML positions; the embedding does not parse npm dependencies. Enumerated values from host-provided HTML custom data are validated conservatively. Quick fixes replace known invalid values or repair simple unclosed/unmatched tags without rewriting the complete document.
 
 The CSS structural declaration layer is project code built on ported scanners, not the full upstream parser. SCSS/LESS scanners recognize variables, interpolation, and their lexical extensions. LESS backticks are scanned, not executed as JavaScript. Structural diagnostics currently register only for CSS.
 
@@ -126,13 +163,13 @@ var folds = await languages.ProvideFoldingRangesAsync(model,
     new FoldingContext(RangeLimit: 500), cancellationToken);
 ```
 
-`Editor.ParameterHintsEnabled` controls automatic signature help. `(` / `,` trigger it, `)` refreshes it, `Ctrl+Shift+Space` invokes it, and `Esc` closes it. Parameter hints and completion use independent non-focus-stealing overlays. Function snippet acceptance can request hints. Full manual overload switching is missing, and not all languages register signature providers.
+`Editor.ParameterHintsEnabled` controls automatic signature help. `(` / `,` trigger it, `)` refreshes it, `Ctrl+Shift+Space` invokes it, and `Esc` closes it. Parameter hints and completion use independent non-focus-stealing overlays. Function snippet acceptance can request hints. While hints are visible, `Alt+Down` and `Alt+Up` navigate overloads; a manually selected signature is retained when its label is present in the next provider result. Not all languages register signature providers.
 
 ## Snippets, ranking, and Codicon
 
 `Ctrl+Space` invokes completion; `SuggestOnTypeEnabled` controls delayed automatic triggering. Candidates support arrows, Enter/Tab, Esc, and page navigation. Snippet sessions use UTF-16 offsets. Tab/Shift+Tab navigate numbered fields, equal-number fields mirror changes, and `$0` finishes. Replacing a parent invalidates covered child fields. User edits and mirrors share undo transactions. TSF mirrors run after write-lock/selection updates and still need Windows regression coverage.
 
-When suggestions are open, Enter/Tab accepts the candidate; Shift+Tab preserves snippet navigation. Esc first closes suggestions, then cancels the snippet on another press. Moving outside the active field, replacing the document, or undoing cancels the session. Choice placeholders retain all values but insert only the first; there is no choice menu yet. A new snippet replaces the old session rather than nesting sessions.
+When suggestions are open, Enter/Tab accepts the candidate; Shift+Tab preserves snippet navigation. Esc first closes suggestions, then cancels the snippet on another press. Moving outside the active field, replacing the document, or undoing cancels the session. Choice placeholders offer a non-focus-stealing list with Up/Down, Home/End, Enter, Tab, Escape and pointer selection. The chosen value updates linked placeholders in the same undo transaction. A new snippet replaces the old session rather than nesting sessions.
 
 Regex transforms use bounded .NET regex, not the complete JS regex engine. Common file/line/date variables exist, not every VS Code variable.
 
@@ -148,7 +185,7 @@ Ranking ports VS Code dynamic-programming fuzzy matching, case/word-boundary bon
 
 Codicons use Microsoft's original vector outlines converted to WinUI Path, without shipping a font. Methods/functions/constructors preserve the upstream shared glyph aliases. Browser-equivalent rasterization is not promised.
 
-Commit-character metadata is retained, but the TSF input path for accepting a suggestion on punctuation is not implemented. The legacy LSP client therefore does not advertise that capability.
+Completion items with explicit commit-character metadata can be accepted on punctuation in the direct `CharacterReceived` path; the completion and punctuation form one undo transaction without duplicate terminal punctuation. Active native TSF composition remains owned by TSF, and TSF-delivered commit characters are not intercepted as completion commands. The legacy LSP client therefore does not advertise complete commit-character support.
 
 ## Legacy LSP compatibility
 

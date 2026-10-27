@@ -141,6 +141,14 @@ struct Api
     API(Location, clang_getCursorLocation, Cursor);
     API(Range, clang_getCursorExtent, Cursor);
     API(unsigned, clang_findReferencesInFile, Cursor, File, Visitor);
+    API(int, clang_getNumArgTypes, Type);
+    API(Type, clang_getArgType, Type, unsigned);
+    API(unsigned, clang_isFunctionTypeVariadic, Type);
+    API(int, clang_Cursor_getNumArguments, Cursor);
+    API(Cursor, clang_Cursor_getArgument, Cursor, unsigned);
+    API(Type, clang_getCursorResultType, Cursor);
+    API(unsigned, clang_getNumOverloadedDecls, Cursor);
+    API(Cursor, clang_getOverloadedDecl, Cursor, unsigned);
 
     std::string take(String value) const
     {
@@ -333,12 +341,123 @@ class Session
         auto cursor = cursor_at(doc, offset);
         auto referenced = api.clang_getCursorReferenced(cursor);
         if (!api.clang_Cursor_isNull(referenced)) cursor = referenced;
-        auto def = api.clang_getCursorDefinition(cursor);
-        if (!api.clang_Cursor_isNull(def)) cursor = def;
         if (api.clang_Cursor_isNull(cursor)) return "{\"locations\":[]}";
-        const auto location = point(api.clang_getCursorLocation(cursor));
-        if (location.file.empty()) return "{\"locations\":[]}";
-        return "{\"locations\":[{\"file\":" + quote(location.file) + ',' + range_json(location.offset, location.offset + api.take(api.clang_getCursorSpelling(cursor)).size()) + "}]}";
+        // Offer both the definition and the declaration when they differ. This supports
+        // header/implementation navigation without a project-wide index or disk crawl.
+        const auto definition = api.clang_getCursorDefinition(cursor);
+        std::string output = "[";
+        std::unordered_set<std::string> added;
+        for (auto candidate : {definition, cursor})
+        {
+            if (api.clang_Cursor_isNull(candidate)) continue;
+            const auto location = point(api.clang_getCursorLocation(candidate));
+            if (location.file.empty()) continue;
+            const auto key = location.file + ':' + std::to_string(location.offset);
+            if (!added.insert(key).second) continue;
+            append(output, "{\"file\":" + quote(location.file) + ',' +
+                range_json(location.offset, location.offset + api.take(api.clang_getCursorSpelling(candidate)).size()) + "}");
+        }
+        return "{\"locations\":" + output + "]}";
+    }
+    struct CallSite
+    {
+        size_t open = 0;
+        unsigned argument = 0;
+        bool valid = false;
+    };
+    static CallSite call_site(std::string_view source, size_t offset)
+    {
+        struct Frame { char delimiter; size_t open; unsigned commas; };
+        std::vector<Frame> stack;
+        enum class Mode { Code, String, Character, LineComment, BlockComment } mode = Mode::Code;
+        bool escape = false;
+        for (size_t i = 0; i < std::min(offset, source.size()); ++i)
+        {
+            const auto c = source[i], next = i + 1 < source.size() ? source[i + 1] : '\0';
+            if (mode == Mode::LineComment) { if (c == '\n') mode = Mode::Code; continue; }
+            if (mode == Mode::BlockComment)
+            {
+                if (c == '*' && next == '/') { mode = Mode::Code; ++i; }
+                continue;
+            }
+            if (mode == Mode::String || mode == Mode::Character)
+            {
+                if (escape) { escape = false; continue; }
+                if (c == '\\') { escape = true; continue; }
+                if (c == (mode == Mode::String ? '"' : '\'')) mode = Mode::Code;
+                continue;
+            }
+            if (c == '/' && next == '/') { mode = Mode::LineComment; ++i; continue; }
+            if (c == '/' && next == '*') { mode = Mode::BlockComment; ++i; continue; }
+            if (c == '"') { mode = Mode::String; continue; }
+            if (c == '\'') { mode = Mode::Character; continue; }
+            if (c == '(' || c == '[' || c == '{') stack.push_back({c, i, 0});
+            else if (c == ')' || c == ']' || c == '}')
+            {
+                const auto matches = c == ')' ? '(' : c == ']' ? '[' : '{';
+                if (!stack.empty() && stack.back().delimiter == matches) stack.pop_back();
+            }
+            else if (c == ',' && !stack.empty() && stack.back().delimiter == '(') ++stack.back().commas;
+        }
+        for (auto it = stack.rbegin(); it != stack.rend(); ++it)
+            if (it->delimiter == '(') return {it->open, it->commas, true};
+        return {};
+    }
+    std::string signature(const mn_language_document& doc, size_t offset)
+    {
+        const std::string_view source(doc.utf8 ? doc.utf8 : "", doc.byte_length);
+        const auto call = call_site(source, offset);
+        if (!call.valid || call.open == 0) return "{\"signatures\":[]}";
+        size_t token = call.open;
+        while (token && (source[token - 1] == ' ' || source[token - 1] == '\t')) --token;
+        if (!token) return "{\"signatures\":[]}";
+        --token;
+        auto cursor = cursor_at(doc, token);
+        if (api.clang_Cursor_isNull(cursor)) return "{\"signatures\":[]}";
+        auto referenced = api.clang_getCursorReferenced(cursor);
+        if (!api.clang_Cursor_isNull(referenced)) cursor = referenced;
+        std::vector<Cursor> candidates;
+        auto count = api.clang_getNumOverloadedDecls(cursor);
+        if (count > 128) count = 128;
+        for (unsigned i = 0; i < count; ++i) candidates.push_back(api.clang_getOverloadedDecl(cursor, i));
+        if (candidates.empty()) candidates.push_back(cursor);
+        std::string list = "[";
+        std::unordered_set<std::string> seen;
+        int chosen = 0, best = -100000, current = 0;
+        for (auto candidate : candidates)
+        {
+            if (api.clang_Cursor_isNull(candidate)) continue;
+            const auto type = api.clang_getCursorType(candidate);
+            const int arguments = api.clang_getNumArgTypes(type);
+            if (arguments < 0 || arguments > 128) continue;
+            const auto name = api.take(api.clang_getCursorSpelling(candidate));
+            if (name.empty()) continue;
+            std::string parameters = "[", label = name + "(";
+            for (int i = 0; i < arguments; ++i)
+            {
+                const auto spelling = api.take(api.clang_getTypeSpelling(api.clang_getArgType(type, static_cast<unsigned>(i))));
+                const auto arg = api.clang_Cursor_getArgument(candidate, static_cast<unsigned>(i));
+                const auto argName = api.clang_Cursor_isNull(arg) ? std::string{} : api.take(api.clang_getCursorSpelling(arg));
+                const auto parameter = spelling + (argName.empty() ? "" : " " + argName);
+                if (i) label += ", ";
+                label += parameter;
+                append(parameters, "{\"label\":" + quote(parameter) + "}");
+            }
+            const bool variadic = api.clang_isFunctionTypeVariadic(type) != 0;
+            if (variadic) label += arguments ? ", ..." : "...";
+            label += ')';
+            const auto returnType = api.take(api.clang_getTypeSpelling(api.clang_getCursorResultType(candidate)));
+            if (!returnType.empty() && returnType != "<invalid>") label = returnType + " " + label;
+            if (!seen.insert(label).second) continue;
+            const int score = call.argument < static_cast<unsigned>(arguments) ? 100 - (arguments - static_cast<int>(call.argument)) * 2 :
+                variadic ? 80 : 0 - (static_cast<int>(call.argument) - arguments + 1) * 10;
+            if (score > best) { best = score; chosen = current; }
+            append(list, "{\"label\":" + quote(label) + ",\"parameters\":" + parameters +
+                "],\"activeParameter\":" + std::to_string(call.argument) + "}");
+            ++current;
+        }
+        return "{\"signatures\":" + list + "],\"activeSignature\":" + std::to_string(chosen) +
+            ",\"activeParameter\":" + std::to_string(call.argument) + "}";
     }
     struct ReferencesContext { Session* owner; std::string output = "["; bool failed = false; };
     static unsigned reference_visitor(void* context, Cursor, Range range) noexcept
@@ -373,7 +492,7 @@ public:
     {
         validate(docs, count);
         if (argc > 16384 || (argc && !args)) throw std::invalid_argument("Invalid compiler arguments.");
-        if (operation > MN_LANGUAGE_REFERENCES) throw std::invalid_argument("Unsupported C++ operation.");
+        if (operation > MN_LANGUAGE_SIGNATURE) throw std::invalid_argument("Unsupported C++ operation.");
         if (offset > docs[0].byte_length) throw std::out_of_range("Offset exceeds source length.");
         std::lock_guard<std::mutex> lock(gate);
         std::vector<Unsaved> unsaved;
@@ -385,6 +504,7 @@ public:
         case MN_LANGUAGE_HOVER: return hover(docs[0], offset);
         case MN_LANGUAGE_DEFINITION: return definition(docs[0], offset);
         case MN_LANGUAGE_REFERENCES: return references(docs[0], offset);
+        case MN_LANGUAGE_SIGNATURE: return signature(docs[0], offset);
         default: throw std::invalid_argument("Unsupported C++ operation.");
         }
     }

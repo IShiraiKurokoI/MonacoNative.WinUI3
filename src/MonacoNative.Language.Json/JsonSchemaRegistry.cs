@@ -88,14 +88,16 @@ public sealed class JsonSchemaRegistry
                 foreach (var child in group.EnumerateArray())
                     foreach (var next in Expand(context with { Schema = child }, depth + 1, visited)) yield return next;
     }
-    internal Context[] AtPath(IEnumerable<Context> roots, IReadOnlyList<object> path)
+    internal Context[] AtPath(IEnumerable<Context> roots, IReadOnlyList<object> path, JsoncNode? instance = null,
+        Func<JsoncNode, Context, bool>? matches = null)
     {
         var contexts = roots.ToArray();
+        var prefix = new List<object>();
         foreach (var segment in path)
         {
             var next = new List<Context>();
             foreach (var source in contexts)
-                foreach (var context in Expand(source))
+                foreach (var context in ExpandActive(source, instance is null ? null : JsoncParser.FindNodeAtLocation(instance, prefix), matches))
                 {
                     var schema = context.Schema;
                     if (schema.ValueKind != JsonValueKind.Object) continue;
@@ -121,8 +123,35 @@ public sealed class JsonSchemaRegistry
                     }
                 }
             contexts = next.ToArray();
+            prefix.Add(segment);
         }
-        return contexts.SelectMany(c => Expand(c)).ToArray();
+        var active = instance is null ? null : JsoncParser.FindNodeAtLocation(instance, path);
+        return contexts.SelectMany(c => ExpandActive(c, active, matches)).ToArray();
+    }
+    private IEnumerable<Context> ExpandActive(Context context, JsoncNode? actual,
+        Func<JsoncNode, Context, bool>? matches)
+    {
+        foreach (var candidate in Expand(context))
+        {
+            yield return candidate;
+            if (actual is not null && matches is not null && candidate.Schema.ValueKind == JsonValueKind.Object &&
+                candidate.Schema.TryGetProperty("if", out var condition))
+            {
+                var key = matches(actual, candidate with { Schema = condition }) ? "then" : "else";
+                if (candidate.Schema.TryGetProperty(key, out var activeBranch))
+                    foreach (var nested in Expand(candidate with { Schema = activeBranch })) yield return nested;
+            }
+            if (actual is { Type: JsoncNodeType.Object } && candidate.Schema.ValueKind == JsonValueKind.Object &&
+                candidate.Schema.TryGetProperty("dependentSchemas", out var dependencies) &&
+                dependencies.ValueKind == JsonValueKind.Object)
+            {
+                var present = actual.Children.Where(p => p.Children.FirstOrDefault()?.Value is string)
+                    .Select(p => p.Children[0].Value as string).ToHashSet(StringComparer.Ordinal);
+                foreach (var dependency in dependencies.EnumerateObject())
+                    if (present.Contains(dependency.Name))
+                        foreach (var nested in Expand(candidate with { Schema = dependency.Value })) yield return nested;
+            }
+        }
     }
     internal static bool PatternMatches(string value, string pattern)
     {

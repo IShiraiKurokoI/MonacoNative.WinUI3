@@ -160,6 +160,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable, IAsyncDispo
     private bool _bracketPairColorization = true;
     private double _lineHeight = DefaultLineHeight;
     private double _maxObservedLineWidth;
+    private double _lastProjectionViewportWidth = double.NaN;
     private double _lastProjectionWrapWidth = double.NaN;
     private double _lastProjectionLineHeight = double.NaN;
     private ulong _lastRenderedVersion;
@@ -300,6 +301,38 @@ public sealed partial class MonacoEditor : UserControl, IDisposable, IAsyncDispo
     public event EventHandler? ViewportChanged;
     public event EventHandler? PointerCursorChanged;
 
+    /// <summary>True after shutdown begins; do not query the text model after this point.</summary>
+    public bool IsDisposed => _disposed || _lifetime.IsStopping;
+
+    /// <summary>VS Code shortcuts are used unless the host selects Visual Studio.</summary>
+    public EditorShortcutScheme ShortcutScheme
+    {
+        get => _commands.ShortcutScheme;
+        set
+        {
+            if (IsDisposed) throw new ObjectDisposedException(nameof(MonacoEditor));
+            _commands.SetShortcutScheme(value);
+            UpdateCommandContext();
+        }
+    }
+
+    /// <summary>
+    /// Replace all keyboard shortcuts for one built-in command at the WinUI layer.
+    /// Pass an empty array to unbind it; pass null to restore the active profile.
+    /// Host overrides persist when switching profiles.
+    /// </summary>
+    public void SetShortcutOverride(string commandId, params EditorShortcutBinding[]? shortcuts)
+    {
+        if (IsDisposed) throw new ObjectDisposedException(nameof(MonacoEditor));
+        _commands.SetShortcutOverride(commandId, shortcuts);
+    }
+
+    /// <summary>Run a built-in command by ID, subject to its normal context rules.</summary>
+    public ValueTask<bool> ExecuteCommandAsync(string commandId)
+    {
+        if (IsDisposed) return ValueTask.FromResult(false);
+        return _commands.TryExecuteAsync(commandId);
+    }
     public MonacoTextModel Model => _model;
     public MonacoViewModel ViewModel => _view;
     public ulong VersionId => _model.VersionId;
@@ -361,7 +394,13 @@ public sealed partial class MonacoEditor : UserControl, IDisposable, IAsyncDispo
         set
         {
             if (string.Equals(_model.LanguageId, value, StringComparison.OrdinalIgnoreCase)) return;
+            InvalidateLanguageFeatureRequests();
+            HideParameterHints();
+            HideSuggestWidget();
+            CancelSnippetSession();
             _model.LanguageId = value; // Raises a full model invalidation event.
+            ClearSemanticTokens();
+            ClearLanguageInlayHints();
             _languageTokens.Clear();
             _bracketPairs.HandleLanguageConfigurationChanged(value);
             _layoutCache?.Clear();
@@ -979,12 +1018,14 @@ public sealed partial class MonacoEditor : UserControl, IDisposable, IAsyncDispo
 
     private void Editor_Unloaded(object sender, RoutedEventArgs e)
     {
+        if (_disposed) return;
         CancelFoldingRefresh();
         CancelNativeDiagnostics();
         HideParameterHints();
         CancelAutomaticSuggestions();
         HideSuggestWidget();
         _loaded = false;
+        InvalidateLanguageFeatureRequests();
         _caretTimer.Stop();
         _accessibilityTimer.Stop();
         _decorationIdleTimer.Stop();
@@ -995,6 +1036,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable, IAsyncDispo
 
     private void Editor_GotFocus(object sender, RoutedEventArgs e)
     {
+        if (IsDisposed) return;
         _textInput?.NotifyFocusEnter();
         UpdateCommandContext();
         ResetCaretBlink();
@@ -1003,6 +1045,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable, IAsyncDispo
 
     private void Editor_LostFocus(object sender, RoutedEventArgs e)
     {
+        if (IsDisposed) return;
         // Native TSF keeps focus on the editor itself, so a real focus move (find box,
         // toolbar, etc.) must deactivate the TSF document instead of being mistaken for
         // an internal adapter focus hop.
@@ -1021,7 +1064,27 @@ public sealed partial class MonacoEditor : UserControl, IDisposable, IAsyncDispo
     private void Editor_SizeChanged(object sender, SizeChangedEventArgs e)
     {
         UpdateFindWidgetPlacement();
-        if (!_loaded || _viewportResizeQueued)
+        QueueViewportResize();
+    }
+
+    private double MeasuredViewportWidth => EditorScrollMetrics.ViewportWidth(
+        ScrollHost.ViewportWidth, ScrollHost.ActualWidth,
+        Math.Max(1, SurfaceRoot.ActualWidth));
+
+    private void ScrollHost_LayoutUpdated(object? sender, object e)
+    {
+        // A vertical scrollbar may change ViewportWidth without changing the
+        // UserControl's size. Recompute once after layout settles, not on each scroll.
+        if (!_loaded || _disposed || _viewportResizeQueued)
+            return;
+        if (double.IsNaN(_lastProjectionViewportWidth) ||
+            Math.Abs(MeasuredViewportWidth - _lastProjectionViewportWidth) > 0.5)
+            QueueViewportResize();
+    }
+
+    private void QueueViewportResize()
+    {
+        if (!_loaded || _disposed || _viewportResizeQueued)
             return;
 
         // SizeChanged can fire once for every pixel of a window-edge drag. Doing a
@@ -1142,8 +1205,10 @@ public sealed partial class MonacoEditor : UserControl, IDisposable, IAsyncDispo
         using var methodSample = _methodProfiler.Measure("UpdateProjectionMetrics");
         if (!_loaded || _measurer is null)
             return;
+        var viewportWidth = MeasuredViewportWidth;
+        _lastProjectionViewportWidth = viewportWidth;
         var overlayWidth = (_showMinimap ? MinimapWidth : 0.0) + (_showOverviewRuler ? OverviewRulerWidth : 0.0);
-        var textWidth = Math.Max(1.0, ActualWidth - overlayWidth - GutterWidth - LeftPadding - RightPadding);
+        var textWidth = Math.Max(1.0, viewportWidth - overlayWidth - GutterWidth - LeftPadding - RightPadding);
         var wrapWidth = _wordWrap ? textWidth : 0.0;
         // Vertical-only resizing does not invalidate text shaping or wrapping.
         // Avoid discarding the DirectWrite layout cache on every resize tick.
@@ -1196,10 +1261,9 @@ public sealed partial class MonacoEditor : UserControl, IDisposable, IAsyncDispo
     private void UpdateExtent()
     {
         using var methodSample = _methodProfiler.Measure("UpdateExtent");
-        var contentWidth = _wordWrap
-            ? Math.Max(1, ActualWidth)
-            : Math.Max(ActualWidth, GutterWidth + LeftPadding + RightPadding + _maxObservedLineWidth);
-        ScrollExtent.Width = contentWidth;
+        ScrollExtent.Width = EditorScrollMetrics.ExtentWidth(
+            _wordWrap, MeasuredViewportWidth, GutterWidth + LeftPadding,
+            RightPadding, _maxObservedLineWidth);
         ScrollExtent.Height = Math.Max(1, _view.TotalHeight + (VerticalPadding * 2));
         _lastKnownViewLineCount = _view.ViewLineCount;
     }
@@ -2524,6 +2588,12 @@ public sealed partial class MonacoEditor : UserControl, IDisposable, IAsyncDispo
             () => Done(() => ReplaceSelection("    ")), false, 0, Keys(new EditorKeybinding("Tab", 100))));
 
         _commands.Register(new EditorCommandDefinition(
+            "editor.action.toggleLineComment", "editor.action.toggleLineComment", "menu.category.editor", "editorTextFocus && !editorReadonly",
+            () => Done(ToggleLineComment), false, 0, Array.Empty<EditorKeybinding>()));
+        _commands.Register(new EditorCommandDefinition(
+            "monacoNative.action.deleteLine", "monacoNative.action.deleteLine", "menu.category.editor", "editorTextFocus && !editorReadonly",
+            () => Done(DeleteCurrentLine), false, 0, Array.Empty<EditorKeybinding>()));
+        _commands.Register(new EditorCommandDefinition(
             "editor.action.addCommentLine", "editor.action.addCommentLine", "menu.category.editor", "editorTextFocus && !editorReadonly",
             () => Done(() => ChangeLineComment(remove: false)), true, 20, Keys(new EditorKeybinding("Ctrl+K Ctrl+C", 200))));
         _commands.Register(new EditorCommandDefinition(
@@ -2678,7 +2748,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable, IAsyncDispo
                     IsChecked = checkedState,
                     IsEnabled = enabled,
                     Tag = command.Id,
-                    KeyboardAcceleratorTextOverride = ShortcutLabel(command),
+                    KeyboardAcceleratorTextOverride = _commands.GetShortcutLabel(command),
                 };
                 ((ToggleMenuFlyoutItem)item).Click += (_, _) => _ = ExecuteContextMenuCommandAsync(command.Id);
             }
@@ -2690,7 +2760,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable, IAsyncDispo
                     IsEnabled = enabled,
                     Tag = command.Id,
                     Style = Resources["EditorMenuFlyoutItemStyle"] as Style,
-                    KeyboardAcceleratorTextOverride = ShortcutLabel(command),
+                    KeyboardAcceleratorTextOverride = _commands.GetShortcutLabel(command),
                 };
                 ((MenuFlyoutItem)item).Click += (_, _) => _ = ExecuteContextMenuCommandAsync(command.Id);
             }
@@ -2744,33 +2814,49 @@ public sealed partial class MonacoEditor : UserControl, IDisposable, IAsyncDispo
         }
     }
 
-    private static string ShortcutLabel(EditorCommandDefinition command)
-    {
-        var binding = command.Keybindings.OrderByDescending(value => value.Weight).FirstOrDefault();
-        if (string.IsNullOrWhiteSpace(binding.Chord))
-            return string.Empty;
-
-        return string.Join(" ", binding.Chord.Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(stroke =>
-        {
-            var separator = stroke.LastIndexOf('+');
-            var prefix = separator >= 0 ? stroke[..(separator + 1)] : string.Empty;
-            var key = separator >= 0 ? stroke[(separator + 1)..] : stroke;
-            key = key switch
-            {
-                "OemPeriod" => ".",
-                "Back" => "Backspace",
-                _ => key,
-            };
-            return prefix + key;
-        }));
-    }
-
     private void SelectAll()
     {
         ClearSecondarySelections();
         _anchor = new MonacoPosition(1, 1);
         _active = _model.GetPositionAt(_model.Length);
         _preferredCaretX = null;
+        OnSelectionChanged();
+    }
+
+    private void ToggleLineComment()
+    {
+        var (startOffset, endOffset) = OrderedSelectionOffsets();
+        var firstLine = _model.GetPositionAt(startOffset).LineNumber;
+        var end = _model.GetPositionAt(endOffset);
+        var lastLine = end.LineNumber;
+        if (endOffset > startOffset && end.Column == 1 && lastLine > firstLine) --lastLine;
+        var prefix = LineCommentPrefix(_model.LanguageId);
+        var allCommented = Enumerable.Range(firstLine, lastLine - firstLine + 1)
+            .Select(_model.GetLineContent)
+            .Where(text => !string.IsNullOrWhiteSpace(text))
+            .All(text => text.TrimStart().StartsWith(prefix, StringComparison.Ordinal));
+        ChangeLineComment(allCommented);
+    }
+
+    private void DeleteCurrentLine()
+    {
+        if (_isReadOnly) return;
+        var line = _active.LineNumber;
+        var lineCount = checked((int)_model.LineCount);
+        var start = _model.GetOffsetAt(new MonacoPosition(line, 1));
+        var end = line < lineCount
+            ? _model.GetOffsetAt(new MonacoPosition(line + 1, 1))
+            : _model.Length;
+        // For the last line remove its preceding line break as well as the text.
+        if (line == lineCount && line > 1)
+            start = _model.GetOffsetAt(new MonacoPosition(line - 1, _model.GetLineMaxColumn(line - 1)));
+        using (var transaction = _model.BeginUndoTransaction())
+        {
+            _model.Replace(start, end, string.Empty);
+            transaction.Complete();
+        }
+        _anchor = _active = _model.GetPositionAt(Math.Min(start, _model.Length));
+        AfterProjectionChanged(true);
         OnSelectionChanged();
     }
 
@@ -2831,6 +2917,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable, IAsyncDispo
 
     private async void Editor_KeyDown(object sender, KeyRoutedEventArgs e)
     {
+        if (IsDisposed) return;
         // Find / replace text and buttons must not trigger TSF/editor shortcuts.
         if (IsFindOpen && IsChildOf(e.OriginalSource as DependencyObject, FindWidget))
             return;
@@ -2902,6 +2989,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable, IAsyncDispo
 
     private void Editor_KeyUp(object sender, KeyRoutedEventArgs e)
     {
+        if (IsDisposed) return;
         if (IsFindOpen && IsChildOf(e.OriginalSource as DependencyObject, FindWidget))
             return;
         var tsfKey = e.OriginalKey == VirtualKey.None ? e.Key : e.OriginalKey;
@@ -2960,6 +3048,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable, IAsyncDispo
 
     private void Editor_CharacterReceived(UIElement sender, CharacterReceivedRoutedEventArgs e)
     {
+        if (IsDisposed) return;
         using var methodSample = _methodProfiler.Measure("Editor_CharacterReceived");
         if (IsFindOpen && IsChildOf(e.OriginalSource as DependencyObject, FindWidget))
             return;
@@ -2977,6 +3066,11 @@ public sealed partial class MonacoEditor : UserControl, IDisposable, IAsyncDispo
         var text = _fallbackCharacterAccumulator.Push(ch);
         if (!string.IsNullOrEmpty(text))
         {
+            if (TryCommitSelectedSuggestionCharacter(text))
+            {
+                e.Handled = true;
+                return;
+            }
             if (text.Length != 1 || !TryInsertOutdentedClosingDelimiter(text[0]))
                 ReplaceSelection(text);
         }
@@ -3688,6 +3782,7 @@ public sealed partial class MonacoEditor : UserControl, IDisposable, IAsyncDispo
             return;
         BeginShutdown();
         CancelSnippetSession();
+        InvalidateLanguageFeatureRequests();
         _disposed = true;
         _loaded = false;
         _caretTimer.Stop();

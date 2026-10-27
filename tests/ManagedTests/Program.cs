@@ -424,7 +424,12 @@ internal static class Program
             Equal("切换自动换行", nls.GetString("editor.action.toggleWordWrap"));
             Equal("切换呈现空白字符", nls.GetString("editor.action.toggleRenderWhitespace"));
             Equal("切换缩略图", nls.GetString("editor.action.toggleMinimap"));
+            Equal("键盘快捷键", nls.GetString("monacoNative.sample.keyboardShortcuts"));
+            Equal("VS Code 快捷键", nls.GetString("monacoNative.sample.shortcuts.vscode"));
+            Equal("Visual Studio 快捷键", nls.GetString("monacoNative.sample.shortcuts.visualStudio"));
             nls.SetCulture("en-US");
+            Equal("KEYBOARD SHORTCUTS", nls.GetString("monacoNative.sample.keyboardShortcuts"));
+            Equal("VS Code shortcuts", nls.GetString("monacoNative.sample.shortcuts.vscode"));
             Equal("Copy", nls.GetString("editor.action.clipboardCopyAction"));
             nls.SetCulture("fr-FR");
             Equal("en-US", nls.CultureName, "Unsupported locales should canonicalize to the English fallback.");
@@ -434,9 +439,11 @@ internal static class Program
             nls.SetCulture("ja");
             Equal("ja-JP", nls.CultureName);
             Equal("コピー", nls.GetString("editor.action.clipboardCopyAction"));
+            Equal("キーボードショートカット", nls.GetString("monacoNative.sample.keyboardShortcuts"));
             nls.SetCulture("ko");
             Equal("ko-KR", nls.CultureName);
             Equal("붙여넣기", nls.GetString("editor.action.clipboardPasteAction"));
+            Equal("키보드 단축키", nls.GetString("monacoNative.sample.keyboardShortcuts"));
             Equal("missing.operation", nls.GetString("missing.operation"));
         });
 

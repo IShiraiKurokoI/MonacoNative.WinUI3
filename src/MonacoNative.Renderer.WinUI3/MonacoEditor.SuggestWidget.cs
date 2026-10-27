@@ -87,6 +87,7 @@ public sealed partial class MonacoEditor
         if (_suggestPopup is null || _suggestRowPanel is null || _disposed || _isReadOnly ||
             _textInput?.IsComposing == true) return;
         HideContributionPopup();
+        HideSnippetChoicePopup();
         var beforeCaret = _model.GetLineContent(caret.LineNumber);
         beforeCaret = beforeCaret[..Math.Clamp(caret.Column - 1, 0, beforeCaret.Length)];
         _suggestMatches = _completionRanking.Rank(items, beforeCaret, caret.LineNumber);
@@ -203,7 +204,24 @@ public sealed partial class MonacoEditor
         return true;
     }
 
-    private async Task CommitSelectedSuggestionAsync()
+    // Direct CharacterReceived input can commit punctuation without sending a second
+    // edit. A TSF-owned composition must finish through the text store instead.
+    private bool TryCommitSelectedSuggestionCharacter(string character)
+    {
+        if (!IsSuggestWidgetVisible || _isReadOnly || _disposed || _textInput?.IsComposing == true ||
+            _model.VersionId != _suggestDocumentVersion || !_active.Equals(_suggestAnchor)) return false;
+        var index = _suggestSelection.SelectedIndex;
+        if (index < 0 || index >= _suggestItems.Count) return false;
+        var item = _suggestItems[index];
+        // A resolver may suspend the commit while the user continues typing. Do not
+        // intercept input unless the full edit can start synchronously.
+        if (item.Resolve is not null || item.RequireResolvedEdit ||
+            !CompletionCommitCharacters.Accepts(item, character)) return false;
+        _ = CommitSelectedSuggestionAsync(character);
+        return true;
+    }
+
+    private async Task CommitSelectedSuggestionAsync(string? commitCharacter = null)
     {
         if (!IsSuggestWidgetVisible || _isReadOnly || _disposed) return;
         var index = _suggestSelection.SelectedIndex;
@@ -219,7 +237,7 @@ public sealed partial class MonacoEditor
         HideSuggestWidget(); // Hide before editing; no stale popup survives model change.
         try
         {
-            await ApplyCompletionItemAsync(item, CancellationToken.None);
+            await ApplyCompletionItemAsync(item, CancellationToken.None, commitCharacter);
         }
         catch (Exception ex)
         {
@@ -420,5 +438,6 @@ public sealed partial class MonacoEditor
             RebuildSuggestRows();
         }
         ApplyParameterHintsPalette();
+        ApplySnippetChoicePalette();
     }
 }

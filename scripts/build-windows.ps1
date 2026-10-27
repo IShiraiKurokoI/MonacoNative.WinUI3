@@ -19,7 +19,7 @@ Write-Host "Building MonacoNative.sln ($Configuration|$Platform)"
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
 $nativeDll = Join-Path $root "artifacts\native\$Platform\$Configuration\MonacoNative.Core.Native.dll"
-$sampleDll = Join-Path $root "src\MonacoNative.SampleApp\bin\$Platform\$Configuration\net8.0-windows10.0.26100.0\MonacoNative.SampleApp.dll"
+$sampleDll = Join-Path $root "src\MonacoNative.SampleApp\bin\$Platform\$Configuration\net10.0-windows10.0.26100.0\MonacoNative.SampleApp.dll"
 $tsfTests = Join-Path $root "artifacts\native-input-tests\$Platform\$Configuration\MonacoNative.NativeInput.Tsf.Tests.exe"
 foreach ($required in @($nativeDll, $sampleDll, $tsfTests)) {
     if (-not (Test-Path $required)) { throw "Windows solution build did not produce required artifact: $required" }

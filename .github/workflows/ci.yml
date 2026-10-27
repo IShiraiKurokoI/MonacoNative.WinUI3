@@ -12,30 +12,9 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '8.0.x'
-      - name: Validate source and test naming
-        run: python3 scripts/check-semantic-names.py
-      - name: Validate WinUI XAML resources
-        run: python3 scripts/check-sample-xaml-resources.py
-      - name: Validate demo UI, localization and menus
-        run: python3 scripts/check-demo-ui.py
-      - name: Validate native ABI export contract
-        run: python3 scripts/check-abi-contract.py
-      - name: Validate TSF-only input and COM source contracts
-        run: |
-          python3 scripts/check-tsf-input-guards.py
-          python3 scripts/check-tsf-source-guards.py
-          python3 scripts/check-tsf-connection-guards.py
-      - name: Validate NuGet WinRT metadata
-        run: python3 scripts/check-winrt-package-metadata.py
-      - name: Validate NuGet architecture and TSF linker options
-        run: python3 scripts/check-packaging-platforms.py
-      - name: Validate benchmark JSON schemas and budgets
-        run: python3 scripts/check-benchmark-schema.py
-      - name: Validate headless Windows smoke safeguards
-        run: python3 scripts/check-windows-smoke-guards.py
-      - name: Test pinned source dependency tooling offline
-        run: python3 scripts/test-upstream.py
+          dotnet-version: '10.0.x'
+      - name: Unified portable source and tooling validation
+        run: python3 scripts/check-source.py
       - name: Configure native GCC Release build
         run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DMONACONATIVE_WARNINGS_AS_ERRORS=ON
       - name: Build native core and ABI tests
@@ -94,7 +73,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '10.0.x'
       - name: Validate Windows ABI UTF-16 compilation
         run: >-
           clang++ -std=c++20 -fshort-wchar -D_WIN32 -D__cdecl= '-D__declspec(x)='
@@ -129,150 +108,119 @@ jobs:
           path: build-sanitize/ctest-*.xml
           if-no-files-found: ignore
 
-  windows-msvc-managed-winui:
-    name: MSVC native ABI, managed integration and WinUI rendering
+  windows-desktop-tests:
+    name: Windows desktop ${{ matrix.configuration }} acceptance and package consumers
     runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        configuration: [Debug, Release]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: '10.0.x'
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-      - name: Test text composition and internationalization
-        shell: pwsh
-        run: dotnet run --project tests/InputTests/MonacoNative.Input.Tests.csproj -c Release
-      - name: Test accessibility and pseudolocalization
-        shell: pwsh
-        run: dotnet run --project tests/AccessibilityTests/MonacoNative.Accessibility.Tests.csproj -c Release
-      - name: Test LSP protocol and provider integration
-        shell: pwsh
-        run: dotnet run --project tests/LspTests/MonacoNative.Lsp.Tests.csproj -c Release
-      - name: Test renderer cache and incremental invalidation
-        shell: pwsh
-        run: dotnet run --project tests/RendererLogicTests/MonacoNative.RendererLogic.Tests.csproj -c Release
-      - name: Build native MSVC core, ABI and TSF binaries
-        shell: pwsh
-        run: ./scripts/test-core.ps1 -Configuration Release -BuildOnly
-      - name: Test MSVC text model, Unicode and editor services
-        shell: pwsh
-        run: ctest --test-dir build-core -C Release --output-on-failure -L '^core$' --output-junit "$PWD/build-core/ctest-core.xml"
-      - name: Test MSVC Native C ABI and lifetime contracts
-        shell: pwsh
-        run: ctest --test-dir build-core -C Release --output-on-failure -L '^abi$' --output-junit "$PWD/build-core/ctest-abi.xml"
-      - name: Test TSF and native input backend
-        shell: pwsh
-        run: ctest --test-dir build-core -C Release --output-on-failure -L '^input$' --output-junit "$PWD/build-core/ctest-input.xml"
-      - name: Test required native language bridges and NuGet libclang deployment
-        shell: pwsh
-        run: ./scripts/test-language-integration.ps1 -Configuration Release -Platform x64
-      - name: Build x64 managed projection, WinRT and WinUI sample
-        shell: pwsh
-        run: ./scripts/build-windows.ps1 -Configuration Release -Platform x64
-      - name: Install Windows App Runtime for headless Win2D tests
+      - name: Install pinned Windows App Runtime for headless Win2D
         shell: pwsh
         run: ./scripts/install-windows-app-runtime-ci.ps1
-      - name: Test Win2D software renderer golden fingerprint
+      - name: Run unified Windows desktop automated acceptance
         shell: pwsh
-        run: ./scripts/test-renderer-golden.ps1 -Configuration Release
-      - name: Measure Win2D renderer deterministic performance budgets
+        run: ./scripts/test-acceptance.ps1 -Mode Automated -Configuration ${{ matrix.configuration }} -RunPackages -PackageVersion 0.1.0-ci
+      - name: Restore and execute a package-only x64 consumer with an empty cache
+        if: matrix.configuration == 'Release'
         shell: pwsh
-        run: ./scripts/run-renderer-benchmarks.ps1 -Profile quick -Output (Join-Path $PWD "artifacts/benchmarks/renderer-quick.json")
-      - name: Test managed P-Invoke and native ABI integration
-        shell: pwsh
-        run: dotnet run --project tests/ManagedTests/MonacoNative.Managed.Tests.csproj -c Release -p:Platform=x64
-      - name: Measure native core quick performance budgets
-        shell: pwsh
-        run: ./scripts/run-benchmarks.ps1 -Profile quick -Output artifacts/benchmarks/core-quick.json
-      - name: Measure native core full performance budgets
-        shell: pwsh
-        run: ./scripts/run-benchmarks.ps1 -Profile full -Output artifacts/benchmarks/core-full.json
-      - name: Validate complete Monaco compatibility and release evidence
-        shell: pwsh
-        run: python scripts/check-parity-release.py --output artifacts/release/parity-report.json
-      - name: Upload Windows CTest results
+        run: ./scripts/test-package-isolated.ps1 -Platform x64 -Configuration Release -Version 0.1.0-ci
+      - name: Upload Windows acceptance results, CTest and package smoke logs
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: windows-msvc-ctest-results
-          path: build-core/ctest-*.xml
+          name: windows-acceptance-test-evidence-${{ matrix.configuration }}
+          path: |
+            artifacts/release/acceptance-report.json
+            artifacts/release/layer-report.json
+            artifacts/tests/isolated-package.json
+            artifacts/release/parity-report.json
+            artifacts/logs/
+            artifacts/tests/isolated-*-stdout.log
+            artifacts/tests/isolated-*-stderr.log
+            build-core/ctest-results.xml
           if-no-files-found: ignore
-      - name: Upload renderer startup diagnostics
+      - name: Upload headless renderer logs, PNG and fingerprints
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: windows-renderer-headless-diagnostics
-          path: artifacts/ci-diagnostics/
+          name: windows-renderer-headless-diagnostics-${{ matrix.configuration }}
+          path: |
+            artifacts/ci-diagnostics/
+            artifacts/render-goldens/renderer-current-*.json
+            artifacts/render-goldens/renderer-current-*.png
           if-no-files-found: ignore
-      - name: Upload renderer golden fingerprint
+      - name: Upload Windows performance evidence
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: windows-renderer-golden
-          path: artifacts/render-goldens/renderer-current.json
-          if-no-files-found: ignore
-      - name: Upload renderer benchmark results
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: windows-renderer-performance
-          path: artifacts/benchmarks/renderer-quick.json
-          if-no-files-found: ignore
-      - name: Upload native core performance and compatibility report
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: windows-core-performance-and-parity
+          name: windows-acceptance-benchmarks-${{ matrix.configuration }}
           path: |
             artifacts/benchmarks/core-quick.json
             artifacts/benchmarks/core-full.json
-            artifacts/release/parity-report.json
+            artifacts/benchmarks/renderer-quick.json
+          if-no-files-found: ignore
+      - name: Upload candidate NuGet packages
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-acceptance-candidate-packages-${{ matrix.configuration }}
+          path: artifacts/packages/*.nupkg
           if-no-files-found: ignore
 
-  windows-package-distribution:
-    name: NuGet packing, managed consumers, C++/WinRT consumers and runtime smoke
-    runs-on: windows-latest
+  windows-arm64-native:
+    name: Native ARM64 runtime, ABI and managed integration
+    runs-on: windows-11-vs2026-arm
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: '8.0.x'
-      - uses: actions/setup-python@v7
-        with:
-          python-version: '3.12'
-      - name: Build and pack x64 and ARM64 native and WinUI assets
+          dotnet-version: '10.0.x'
+      - name: Build and execute ARM64 CTest and managed native ABI
         shell: pwsh
-        run: ./scripts/pack-windows.ps1 -Configuration Release -Version 0.1.0-ci
-      - name: Test x64 and ARM64 managed NuGet consumers and resources
-        shell: pwsh
-        run: ./scripts/test-package-managed-consumers.ps1 -Configuration Release -Version 0.1.0-ci
-      - name: Test x64 and ARM64 C++/WinRT NuGet consumers
-        shell: pwsh
-        run: ./scripts/test-package-cpp-consumers.ps1 -Configuration Release -Version 0.1.0-ci
-      - name: Run headless x64 native core NuGet consumer smoke
-        shell: pwsh
-        run: ./scripts/test-package-core-runtime.ps1 -Configuration Release -Version 0.1.0-ci
-      - name: Upload package core runtime diagnostics
+        run: ./scripts/test-native-arm64.ps1 -Configuration Release
+      - name: Upload ARM64 runtime evidence
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: windows-package-core-smoke-logs
-          path: artifacts/logs/package-core-consumer-*.log
-          if-no-files-found: ignore
-      - name: Upload NuGet packages
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: windows-nuget-packages
-          path: artifacts/packages/*.nupkg
-          if-no-files-found: ignore
-      - name: Upload C++/WinRT component artifacts
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: windows-winrt-components
+          name: windows-arm64-native-runtime
           path: |
-            artifacts/winrt/x64/Release/*
-            artifacts/winrt/ARM64/Release/*
+            artifacts/tests/arm64-native.json
+            build-arm64-native/ctest-arm64.xml
+          if-no-files-found: ignore
+
+  windows-arm64-package:
+    name: Native ARM64 isolated NuGet runtime consumer
+    needs: [windows-desktop-tests, windows-arm64-native]
+    runs-on: windows-11-vs2026-arm
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+      - name: Download release-configuration candidate packages
+        uses: actions/download-artifact@v7
+        with:
+          name: windows-acceptance-candidate-packages-Release
+          path: artifacts/packages
+      - name: Execute isolated ARM64 package consumer
+        shell: pwsh
+        run: ./scripts/test-package-isolated.ps1 -Platform ARM64 -Configuration Release -Version 0.1.0-ci
+      - name: Upload isolated ARM64 package evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: windows-arm64-isolated-package
+          path: |
+            artifacts/tests/isolated-package.json
+            artifacts/tests/isolated-*-stdout.log
+            artifacts/tests/isolated-*-stderr.log
           if-no-files-found: ignore

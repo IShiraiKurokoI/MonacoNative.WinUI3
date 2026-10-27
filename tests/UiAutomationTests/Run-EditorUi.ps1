@@ -102,7 +102,7 @@ public static class WinUiTestMouse {
 }
 '@
 
-    $exe = Join-Path $root "src\MonacoNative.SampleApp\bin\x64\$Configuration\net8.0-windows10.0.26100.0\MonacoNative.SampleApp.exe"
+    $exe = Join-Path $root "src\MonacoNative.SampleApp\bin\x64\$Configuration\net10.0-windows10.0.26100.0\MonacoNative.SampleApp.exe"
     if (-not (Test-Path $exe)) { throw "Sample executable missing: $exe" }
     $profileDir = Join-Path $OutputDirectory 'method-profiles'
     New-Item -ItemType Directory -Force -Path $profileDir | Out-Null
@@ -131,6 +131,11 @@ public static class WinUiTestMouse {
     Check ($bounds.Width -ge 500 -and $bounds.Height -ge 200) 'editor UIA bounds valid'
     $dpi = [WinUiTestMouse]::GetDpiForWindow($script:app.MainWindowHandle)
     $scale = if ($dpi -gt 0) { $dpi / 96.0 } else { 1.0 }
+    $expectedScale = [Environment]::GetEnvironmentVariable('MONACONATIVE_EXPECTED_SCALE_PERCENT')
+    if ($expectedScale) {
+        $expectedDpi = 96.0 * [double]::Parse($expectedScale, [cultureinfo]::InvariantCulture) / 100.0
+        Check ([Math]::Abs($dpi - $expectedDpi) -le 1) "window DPI $dpi matches device runner $expectedScale%"
+    }
     $cx = [int]($bounds.Left + [Math]::Min($bounds.Width / 2.0, 200 * $scale))
     $cy = [int]($bounds.Top + [Math]::Min($bounds.Height / 2.0, 70 * $scale))
     $gx = [int]($bounds.Left + 25 * $scale)
@@ -249,6 +254,16 @@ public static class WinUiTestMouse {
     Check ($wordRects.Length -gt 0) 'UIA exposes code word screen coordinates'
     $wordX = [int]($wordRects[0].Left + $wordRects[0].Width / 2.0)
     $wordY = [int]($wordRects[0].Top + $wordRects[0].Height / 2.0)
+    # TextPattern coordinates are physical desktop pixels. The screen point
+    # returned by GetBoundingRectangles must map back to the same word even on
+    # a scaled monitor or when the window is away from the screen origin.
+    Check ($wordRects[0].Left -ge ($bounds.Left - 2) -and
+        $wordRects[0].Right -le ($bounds.Right + 2) -and
+        $wordRects[0].Top -ge ($bounds.Top - 2) -and
+        $wordRects[0].Bottom -le ($bounds.Bottom + 2)) 'UIA text bounds lie inside editor screen bounds'
+    $hitRange = $textPattern.RangeFromPoint(([System.Windows.Point]::new($wordX, $wordY)))
+    $hitRange.ExpandToEnclosingUnit([System.Windows.Automation.Text.TextUnit]::Word)
+    Check ($hitRange.GetText(-1) -eq 'Counter') 'UIA physical-pixel range geometry round-trips through RangeFromPoint'
     [WinUiTestMouse]::Click($wordX, $wordY)
     Start-Sleep -Milliseconds 100
     [WinUiTestMouse]::Click($wordX, $wordY)
@@ -350,6 +365,12 @@ public static class WinUiTestMouse {
     Check (@($data.Methods | Where-Object Name -eq 'HitTest').Count -gt 0) 'method profile includes mouse hit testing'
     Check (@($data.Methods | Where-Object { $_.Calls -gt 0 -and $_.TotalInclusiveMs -ge 0 }).Count -gt 0) 'method timings and call counts emitted'
 
+    # Exercise the regular WinUI window close path (not Kill), so late status
+    # and focus notifications cannot read a disposed MonacoTextModel.
+    Check ($script:app.CloseMainWindow()) 'sample window accepts a normal close request'
+    Check ($script:app.WaitForExit(15000)) 'sample window closes without hanging in editor DisposeAsync'
+    Check ($script:app.ExitCode -eq 0) 'sample exits cleanly after editor disposal'
+
     $script:success = $true
 } catch {
     $script:failure = $_.Exception.Message
@@ -359,6 +380,7 @@ public static class WinUiTestMouse {
         schemaVersion = 1
         timestampUtc = [DateTime]::UtcNow.ToString('o')
         pass = $script:success
+        expectedScalePercent = [Environment]::GetEnvironmentVariable('MONACONATIVE_EXPECTED_SCALE_PERCENT')
         error = $script:failure
         steps = @($script:steps.ToArray())
         profiles = @((Get-ChildItem -Path (Join-Path $OutputDirectory 'method-profiles') -Filter 'method-profile-*.json' -File -ErrorAction SilentlyContinue | ForEach-Object FullName))

@@ -42,6 +42,10 @@ public sealed class CSharpLanguagePackage : ILanguagePackage
             regs.Add(service.RegisterDocumentFormattingEditProvider(selector, engine));
             regs.Add(service.RegisterDocumentRangeFormattingEditProvider(selector, engine));
             regs.Add(service.RegisterDocumentDiagnosticsProvider(selector, engine));
+            regs.Add(service.RegisterRenameProvider(selector, engine));
+            regs.Add(service.RegisterCodeActionProvider(selector, engine));
+            regs.Add(service.RegisterDocumentSemanticTokensProvider(selector, engine));
+            regs.Add(service.RegisterInlayHintsProvider(selector, engine));
             return regs;
         }
         catch { regs.Dispose(); throw; }

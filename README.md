@@ -8,10 +8,12 @@ The editor uses a C++20 text core, a WinUI 3 / Win2D renderer, native Windows te
 
 - Native text model, undo/redo, selections, multi-cursor editing, folding, minimap, find/replace, and diff view
 - Syntax highlighting and language-aware indentation
-- Completion UI with Codicons, fuzzy ranking, snippets, placeholder navigation, and parameter hints
+- Completion UI with Codicons, fuzzy ranking, snippet choices, and Visual Studio-style parameter hints
 - C# semantic features through in-process Roslyn
 - C++ semantic features through in-process libclang
 - Native C# / C++ ports for JSON, HTML, CSS, JavaScript, and TypeScript editing features
+- VS Code (default) and Visual Studio keybinding profiles with WinUI host overrides
+- C++ source formatting through optional LLVM clang-format
 - WinUI 3 sample application with C#, C++, JSON, HTML, CSS, JavaScript, and TypeScript samples
 
 Language coverage is listed in [doc/LANGUAGE_SERVICES.md](doc/LANGUAGE_SERVICES.md).
@@ -33,9 +35,9 @@ Language coverage is listed in [doc/LANGUAGE_SERVICES.md](doc/LANGUAGE_SERVICES.
 
 Requirements:
 
-- Visual Studio 2022 with Desktop development with C++ and .NET desktop development
+- Visual Studio 2026 with Desktop development with C++ and .NET desktop development
 - Windows SDK 10.0.26100.0
-- .NET 8 SDK
+- .NET 10 SDK
 
 Open `MonacoNative.sln`, select `Debug | x64`, restore NuGet packages, and run `MonacoNative.SampleApp`.
 
@@ -43,12 +45,20 @@ C# uses the Roslyn NuGet packages. C++ uses the fixed libclang runtime packages.
 
 More build details are in [doc/BUILDING.md](doc/BUILDING.md).
 
+For individual Windows test layers use `./scripts/test.ps1 -Layer Build` followed by
+`-Layer Core`, `Services`, `WinUI`, and `Integration`. `-Layer All -RunPackages`
+runs the complete automated path.
+
+
 ## Documentation
 
 - [Architecture](doc/TECHNICAL_NOTES.md)
 - [Language services](doc/LANGUAGE_SERVICES.md)
 - [Building](doc/BUILDING.md)
 - [Testing](doc/TESTING.md)
+- [Keyboard shortcuts](doc/KEYBOARD_SHORTCUTS.md)
+- [NuGet deployment and compatibility](doc/PACKAGING.md)
+- [Standalone WinUI NuGet consumer](examples/NuGetWinUI3/README.md)
 - [Native ABI](doc/NATIVE_ABI.md)
 - [Upstream sources and licenses](doc/UPSTREAM.md)
 

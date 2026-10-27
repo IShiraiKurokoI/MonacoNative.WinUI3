@@ -6,7 +6,7 @@ using MonacoNative.Language;
 namespace MonacoNative.Language.Json;
 
 /// <summary>AST-driven native providers. JSON Schema coverage is a documented subset, not a full upstream port.</summary>
-public sealed class JsonNativeLanguageService : ICompletionItemProvider, IHoverProvider, IDocumentDiagnosticsProvider
+public sealed partial class JsonNativeLanguageService : ICompletionItemProvider, IHoverProvider, IDocumentDiagnosticsProvider, ICodeActionProvider
 {
     private readonly JsonSchemaRegistry _schemas;
     public JsonNativeLanguageService(JsonSchemaRegistry schemas) => _schemas = schemas ?? throw new ArgumentNullException(nameof(schemas));
@@ -43,7 +43,7 @@ public sealed class JsonNativeLanguageService : ICompletionItemProvider, IHoverP
             var used = parent?.Type == JsoncNodeType.Object ? parent.Children.Where(p => p.Children.Count > 0).Select(p => p.Children[0].Value as string).ToHashSet(StringComparer.Ordinal) : new HashSet<string?>(StringComparer.Ordinal);
             var currentProperty = previous?.Value as string;
             var alreadyHasValue = parent?.Children.FirstOrDefault(p => p.Offset == start)?.ColonOffset is not null;
-            foreach (var schema in _schemas.AtPath(roots, parentPath))
+            foreach (var schema in Applicable(roots, parentPath, parsed.Root, snapshot, ct))
             {
                 ct.ThrowIfCancellationRequested();
                 if (schema.Schema.ValueKind != JsonValueKind.Object || !schema.Schema.TryGetProperty("properties", out var properties) || properties.ValueKind != JsonValueKind.Object) continue;
@@ -71,7 +71,7 @@ public sealed class JsonNativeLanguageService : ICompletionItemProvider, IHoverP
         }
         else
         {
-            foreach (var contextSchema in _schemas.AtPath(roots, path))
+            foreach (var contextSchema in Applicable(roots, path, parsed.Root, snapshot, ct))
             {
                 ct.ThrowIfCancellationRequested(); var schema = contextSchema.Schema;
                 if (schema.ValueKind != JsonValueKind.Object) continue;
@@ -108,7 +108,7 @@ public sealed class JsonNativeLanguageService : ICompletionItemProvider, IHoverP
         var snapshot = new LanguageTextSnapshot(model.GetValue()); var parsed = Parse(model, snapshot.Text, ct);
         var node = JsoncParser.FindNodeAtOffset(parsed.Root, snapshot.OffsetAt(position), true);
         if (node is null) return ValueTask.FromResult<Hover?>(null);
-        var contexts = _schemas.AtPath(_schemas.ForDocument(model.Uri, parsed.Root), JsoncParser.GetNodePath(node));
+        var contexts = Applicable(_schemas.ForDocument(model.Uri, parsed.Root), JsoncParser.GetNodePath(node), parsed.Root, snapshot, ct);
         var descriptions = contexts.Select(c => Description(c.Schema)).Where(s => !string.IsNullOrEmpty(s)).Distinct().Select(s => new MarkdownString(s!)).ToArray();
         return ValueTask.FromResult<Hover?>(descriptions.Length == 0 ? null : new(descriptions, snapshot.Range(node.Offset, node.End)));
     }
@@ -123,6 +123,15 @@ public sealed class JsonNativeLanguageService : ICompletionItemProvider, IHoverP
         }
         return ValueTask.FromResult<IReadOnlyList<LanguageDiagnostic>?>(errors);
     }
+    private JsonSchemaRegistry.Context[] Applicable(IEnumerable<JsonSchemaRegistry.Context> contexts,
+        IReadOnlyList<object> path, JsoncNode? root, LanguageTextSnapshot snapshot, CancellationToken ct) =>
+        _schemas.AtPath(contexts, path, root, (actual, condition) =>
+        {
+            var errors = new List<LanguageDiagnostic>();
+            Validate(actual, condition, snapshot, errors, new(StringComparer.Ordinal), 0, ct);
+            return !errors.Any(e => e.Severity == DiagnosticSeverity.Error);
+        });
+
     private static void Duplicates(JsoncNode node, LanguageTextSnapshot snapshot, List<LanguageDiagnostic> errors, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
@@ -169,6 +178,39 @@ public sealed class JsonNativeLanguageService : ICompletionItemProvider, IHoverP
                 }
                 if (matches == 0 || keyword == "oneOf" && matches != 1) Error("Value does not satisfy " + keyword + ".");
             }
+        if (schema.TryGetProperty("if", out var condition))
+        {
+            // The condition is a predicate, not a diagnostic on the document. Only the selected
+            // branch contributes errors; in particular, a failing `if` is never itself an error.
+            var predicateErrors = new List<LanguageDiagnostic>();
+            Validate(node, context with { Schema = condition }, snapshot, predicateErrors,
+                new HashSet<string>(visited, StringComparer.Ordinal), depth + 1, ct);
+            var branchName = predicateErrors.Any(e => e.Severity == DiagnosticSeverity.Error) ? "else" : "then";
+            if (schema.TryGetProperty(branchName, out var conditionalBranch))
+                Validate(node, context with { Schema = conditionalBranch }, snapshot, errors, visited, depth + 1, ct);
+        }
+        if (node.Type == JsoncNodeType.Object && schema.TryGetProperty("dependentRequired", out var dependentRequired) &&
+            dependentRequired.ValueKind == JsonValueKind.Object)
+        {
+            var available = node.Children.Where(p => p.Children.Count > 0)
+                .Select(p => p.Children[0].Value as string).ToHashSet(StringComparer.Ordinal);
+            foreach (var dependency in dependentRequired.EnumerateObject())
+            {
+                if (!available.Contains(dependency.Name) || dependency.Value.ValueKind != JsonValueKind.Array) continue;
+                foreach (var requiredName in dependency.Value.EnumerateArray())
+                    if (requiredName.ValueKind == JsonValueKind.String && !available.Contains(requiredName.GetString()))
+                        Error("Property '" + dependency.Name + "' requires property '" + requiredName.GetString() + "'.");
+            }
+        }
+        if (node.Type == JsoncNodeType.Object && schema.TryGetProperty("dependentSchemas", out var dependentSchemas) &&
+            dependentSchemas.ValueKind == JsonValueKind.Object)
+        {
+            var available = node.Children.Where(p => p.Children.Count > 0)
+                .Select(p => p.Children[0].Value as string).ToHashSet(StringComparer.Ordinal);
+            foreach (var dependency in dependentSchemas.EnumerateObject())
+                if (available.Contains(dependency.Name))
+                    Validate(node, context with { Schema = dependency.Value }, snapshot, errors, visited, depth + 1, ct);
+        }
         if (schema.TryGetProperty("not", out var forbidden))
         {
             var branch = new List<LanguageDiagnostic>(); Validate(node, context with { Schema = forbidden }, snapshot, branch, visited, depth + 1, ct);

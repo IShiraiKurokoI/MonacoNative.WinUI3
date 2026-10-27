@@ -5,7 +5,6 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Automation;
 using MonacoNative.Input;
 using MonacoNative.Renderer.WinUI3;
-using MonacoNative.Core;
 
 namespace MonacoNative.SampleApp;
 
@@ -16,11 +15,15 @@ public sealed partial class MainWindow : Window
         public override string ToString() => Label;
     }
 
+    private sealed record ShortcutSchemeOption(EditorShortcutScheme Value, string Label)
+    {
+        public override string ToString() => Label;
+    }
+
     private bool _refreshingThemeOptions;
+    private bool _refreshingShortcutSchemes;
     private bool _updatingFeatureToggles;
     private bool _updatingMenuOptions;
-    private ulong _countedCharactersVersion = ulong.MaxValue;
-    private long _countedCharacters;
     private readonly SemaphoreSlim _sampleLoadLock = new(1, 1);
     private CancellationTokenSource? _sampleLoadCancellation;
     private bool _closing;
@@ -57,7 +60,7 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        Editor.NativeLanguageServiceFailed += (_, _) => ProfileReportHint.Text = Editor.LastNativeLanguageServiceError?.Message ?? string.Empty;
+        Editor.NativeLanguageServiceFailed += (_, _) => { if (!_closing && !Editor.IsDisposed) ProfileReportHint.Text = Editor.LastNativeLanguageServiceError?.Message ?? string.Empty; };
         var jsonPackage = Editor.Languages.Packages.Installed.OfType<MonacoNative.Language.Json.JsonLanguagePackage>().Single();
         jsonPackage.Schemas.Register(new Uri("monaco://schemas/sample-package"), """
             {"type":"object","required":["name","version"],"properties":{
@@ -80,8 +83,10 @@ public sealed partial class MainWindow : Window
         Editor.ImeStateChanged += (_, _) => UpdateStatus();
         Editor.PointerCursorChanged += (_, _) => UpdateStatus();
         Editor.EditorViewOptionsChanged += (_, _) => SynchronizeFeatureToggles();
+        RefreshShortcutSchemeOptions();
         Closed += async (_, _) =>
         {
+            if (_closing) return;
             _closing = true;
             // A sample load is no longer useful after the window closes. Cancel it rather
             // than holding application shutdown on file I/O or language initialization.
@@ -98,6 +103,33 @@ public sealed partial class MainWindow : Window
         UpdateStatus();
     }
 
+    private void ShortcutSchemeBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_closing || _refreshingShortcutSchemes || Editor is null || Editor.IsDisposed) return;
+        if (ShortcutSchemeBox.SelectedItem is ShortcutSchemeOption option)
+            Editor.ShortcutScheme = option.Value;
+    }
+
+    private void RefreshShortcutSchemeOptions()
+    {
+        if (_closing || Editor.IsDisposed) return;
+        _refreshingShortcutSchemes = true;
+        try
+        {
+            var selectedScheme = Editor.ShortcutScheme;
+            var choices = new[]
+            {
+                new ShortcutSchemeOption(EditorShortcutScheme.VSCode,
+                    Editor.GetLocalizedString("monacoNative.sample.shortcuts.vscode")),
+                new ShortcutSchemeOption(EditorShortcutScheme.VisualStudio,
+                    Editor.GetLocalizedString("monacoNative.sample.shortcuts.visualStudio"))
+            };
+            ShortcutSchemeBox.ItemsSource = choices;
+            ShortcutSchemeBox.SelectedItem = choices.First(option => option.Value == selectedScheme);
+        }
+        finally { _refreshingShortcutSchemes = false; }
+    }
+
     private void Undo_Click(object sender, RoutedEventArgs e) { Editor.Undo(); UpdateStatus(); }
     private void Redo_Click(object sender, RoutedEventArgs e) { Editor.Redo(); UpdateStatus(); }
 
@@ -110,11 +142,6 @@ public sealed partial class MainWindow : Window
 
     private static string ResolveSamplePath(SampleAsset sample) =>
         Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "Assets", "Samples", sample.FileName));
-
-    private LanguageSourcePortStatus GetNativePortStatus() =>
-        Editor.Languages.Packages.Installed.FirstOrDefault(package =>
-            package.LanguageIds.Contains(Editor.LanguageId, StringComparer.OrdinalIgnoreCase))
-            ?.SourcePortStatus ?? LanguageSourcePortStatus.NotDeclared;
 
     private async void LoadSelectedSample()
     {
@@ -134,6 +161,8 @@ public sealed partial class MainWindow : Window
                     // The host supplies module snapshots; the native service never crawls disk.
                     var modulePath = Path.Combine(Path.GetDirectoryName(path)!, "demo.types.ts");
                     var moduleText = await File.ReadAllTextAsync(modulePath, cancellation.Token);
+                    cancellation.Token.ThrowIfCancellationRequested();
+                    if (_closing || Editor.IsDisposed) return;
                     var package = Editor.Languages.Packages.Installed
                         .OfType<MonacoNative.Language.TypeScript.TypeScriptLanguagePackage>().Single();
                     package.Options.SetDocuments(new Dictionary<Uri, string>
@@ -141,9 +170,12 @@ public sealed partial class MainWindow : Window
                         [new Uri(modulePath)] = moduleText
                     });
                 }
+                var contents = await File.ReadAllTextAsync(path, cancellation.Token);
+                cancellation.Token.ThrowIfCancellationRequested();
+                if (_closing || Editor.IsDisposed) return;
                 Editor.LanguageId = sample.LanguageId;
                 Editor.DocumentUri = new Uri(path);
-                Editor.Text = await File.ReadAllTextAsync(path, cancellation.Token);
+                Editor.Text = contents;
                 // Source assets are already formatted. Do not mutate them using the demo's
                 // simplified formatter on every load; the Format button is explicit.
                 // Built-in providers execute directly in-process. Loading a sample must
@@ -156,7 +188,7 @@ public sealed partial class MainWindow : Window
         catch (OperationCanceledException) { /* A newer sample load superseded this one. */ }
         catch (Exception ex)
         {
-            if (!cancellation.IsCancellationRequested)
+            if (!cancellation.IsCancellationRequested && !_closing && !Editor.IsDisposed)
                 ProfileReportHint.Text = string.Format(Editor.GetLocalizedString("monacoNative.sample.loadError"), ex.Message);
         }
         finally
@@ -168,10 +200,13 @@ public sealed partial class MainWindow : Window
 
     private async void FormatSample_Click(object sender, RoutedEventArgs e)
     {
+        if (_closing || Editor.IsDisposed) return;
         try { await Editor.FormatDocumentAsync(); }
+        catch (OperationCanceledException) when (_closing || Editor.IsDisposed) { }
         catch (Exception exception)
         {
-            ProfileReportHint.Text = string.Format(Editor.GetLocalizedString("monacoNative.sample.formatError"), exception.Message);
+            if (!_closing && !Editor.IsDisposed)
+                ProfileReportHint.Text = string.Format(Editor.GetLocalizedString("monacoNative.sample.formatError"), exception.Message);
         }
     }
 
@@ -180,11 +215,11 @@ public sealed partial class MainWindow : Window
 
     private void UpdateLanguageServiceStatus()
     {
-        var hasLexer = Editor.Languages.Languages.TryGetMonarchTokenizer(Editor.LanguageId, out _, out _);
+        if (_closing || !Editor.TryGetLanguageStatus(out var language)) return;
         LanguageServiceStatus.Text = string.Format(CultureInfo.CurrentCulture,
-            Editor.GetLocalizedString("monacoNative.sample.languageStatus"), Editor.LanguageId,
-            Editor.GetLocalizedString(hasLexer ? "monacoNative.sample.highlightOn" : "monacoNative.sample.highlightOff"),
-            Editor.GetLocalizedString(GetNativePortStatus() switch
+            Editor.GetLocalizedString("monacoNative.sample.languageStatus"), language.LanguageId,
+            Editor.GetLocalizedString(language.HasTokenizer ? "monacoNative.sample.highlightOn" : "monacoNative.sample.highlightOff"),
+            Editor.GetLocalizedString(language.SourcePortStatus switch
             {
                 LanguageSourcePortStatus.InProcessUpstream => "monacoNative.sample.nativeInProcess",
                 LanguageSourcePortStatus.PartialPort => "monacoNative.sample.nativePartial",
@@ -219,7 +254,7 @@ public sealed partial class MainWindow : Window
 
     private void EditorFeature_Click(object sender, RoutedEventArgs e)
     {
-        if (_updatingFeatureToggles || Editor is null || sender is not ToggleMenuFlyoutItem toggle || toggle.Tag is not string key)
+        if (_closing || _updatingFeatureToggles || Editor is null || Editor.IsDisposed || sender is not ToggleMenuFlyoutItem toggle || toggle.Tag is not string key)
             return;
         // WinUI's ToggleMenuFlyoutItem.Click can observe the check visual before
         // its new state is committed. Toggle from the editor's authoritative
@@ -253,7 +288,7 @@ public sealed partial class MainWindow : Window
 
     private void SynchronizeFeatureToggles()
     {
-        if (Editor is null || WordWrapToggle is null) return;
+        if (_closing || Editor is null || Editor.IsDisposed || WordWrapToggle is null) return;
         _updatingFeatureToggles = true;
         try
         {
@@ -390,12 +425,14 @@ public sealed partial class MainWindow : Window
 
     private void Editor_UiLanguageChanged(object? sender, EventArgs e)
     {
+        if (_closing || Editor.IsDisposed) return;
         ApplyLocalization();
         UpdateStatus();
     }
 
     private void ApplyLocalization()
     {
+        if (_closing || Editor.IsDisposed) return;
         Title = Editor.GetLocalizedString("monacoNative.sample.windowTitle");
         UndoButton.Label = Editor.GetLocalizedString("undo");
         RedoButton.Label = Editor.GetLocalizedString("redo");
@@ -406,6 +443,8 @@ public sealed partial class MainWindow : Window
         FormatSampleButton.Content = Editor.GetLocalizedString("monacoNative.sample.formatButton");
         CommandAccessHeader.Text = Editor.GetLocalizedString("monacoNative.sample.commandAccess");
         CommandAccessDescription.Text = Editor.GetLocalizedString("monacoNative.sample.commandAccessDescription");
+        KeyboardShortcutsHeader.Text = Editor.GetLocalizedString("monacoNative.sample.keyboardShortcuts");
+        RefreshShortcutSchemeOptions();
         FindSidebarButton.Content = Editor.GetLocalizedString("monacoNative.sample.findButton");
         ReplaceSidebarButton.Content = Editor.GetLocalizedString("monacoNative.sample.replaceButton");
         AdvancedPolicyHeader.Text = Editor.GetLocalizedString("monacoNative.sample.advancedPolicy");
@@ -429,30 +468,27 @@ public sealed partial class MainWindow : Window
 
     private void UpdateStatus()
     {
+        // The renderer owns model measurements and refuses queries during shutdown.
+        // This window only formats those measurements for its demo status bar.
+        if (_closing || !Editor.TryGetDocumentStatus(out var document) ||
+            !Editor.TryGetLanguageStatus(out var language))
+            return;
         var input = string.IsNullOrWhiteSpace(Editor.InputLanguageTag)
             ? Editor.GetLocalizedString("monacoNative.sample.input.none")
             : Editor.InputLanguageTag;
-        // A Unicode scalar (including one non-BMP emoji) counts as one character,
-        // whereas UTF-16 Length counts its two code units. Avoid recounting on
-        // focus, cursor, theme, language and other non-text status updates.
-        if (_countedCharactersVersion != Editor.VersionId)
-        {
-            _countedCharacters = MonacoTextStatistics.CountCharacters(Editor.Text);
-            _countedCharactersVersion = Editor.VersionId;
-        }
         StatusText.Text = string.Format(
             CultureInfo.CurrentCulture,
             Editor.GetLocalizedString("monacoNative.sample.status"),
-            Editor.LineCount,
-            Editor.Length,
-            _countedCharacters,
+            document.LineCount,
+            document.Length,
+            document.CharacterCount,
             input);
         // Stable, nonlocalized accessibility telemetry for end-to-end UI test assertions.
         // Does not expose source text or modify the editor's UIA Text provider.
         AutomationProperties.SetName(StatusText,
-            $"MonacoNativeTestState;Length={Editor.Length};Version={Editor.VersionId};" +
+            $"MonacoNativeTestState;Length={document.Length};Version={document.VersionId};" +
             $"Cursor={Editor.PointerCursorState};Profile={(Editor.MethodProfilingEnabled ? "on" : "off")};" +
             $"Theme={Editor.RequestedTheme};Folds={Editor.AvailableFoldCount};Collapsed={Editor.CollapsedFoldCount};" +
-            $"Language={Editor.LanguageId};Backend=Native;PortStatus={GetNativePortStatus()}");
+            $"Language={language.LanguageId};Backend=Native;PortStatus={language.SourcePortStatus}");
     }
 }

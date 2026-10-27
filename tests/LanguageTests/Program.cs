@@ -203,6 +203,19 @@ static class Tests
         var choices = SnippetParser.Parse(@"${1|red\,blue,green\|gold|} \$ ${2:x}$0");
         AssertEx.Equal("red,blue $ x", choices.Text, "choice and dollar escapes");
         AssertEx.Equal("green|gold", choices.Placeholders.First(p => p.Index == 1).Choices[1], "all choices retained");
+        var choiceExpansion = SnippetParser.Parse("${1|red,green|} and $1$0");
+        var choiceSession = new SnippetSession(choiceExpansion, 0);
+        var choiceText = choiceExpansion.Text;
+        var choiceStop = choiceSession.Current!;
+        AssertEx.True(choiceSession.ObserveEdit(choiceStop.Start, choiceStop.Length, "green"), "choice edit retains snippet session");
+        choiceText = choiceText.Remove(choiceStop.Start, choiceStop.Length).Insert(choiceStop.Start, "green");
+        foreach (var edit in choiceSession.GetLinkedEdits(1, (start, length) => choiceText.Substring(start, length)))
+        {
+            choiceSession.ApplyLinkedEdit(edit);
+            choiceText = choiceText.Remove(edit.Start, edit.Length).Insert(edit.Start, edit.Text);
+        }
+        AssertEx.Equal("green and green", choiceText, "choice selection mirrors identical placeholder indices");
+        AssertEx.Equal(0, choiceSession.Move(false)!.Index, "Tab after choice advances to final stop");
         var variables = SnippetParser.Parse("${TM_FILENAME} ${UNSET:default} $UNKNOWN", new Dictionary<string, string> { ["TM_FILENAME"] = "demo.cs" });
         AssertEx.Equal("demo.cs default UNKNOWN", variables.Text, "known/default/unknown variables");
         AssertEx.True(variables.Placeholders.Any(p => p.Index > 0 && p.Length == 7), "unknown variable becomes editable");
@@ -213,6 +226,101 @@ static class Tests
         var utf16 = SnippetParser.Parse("😀${1:x}$0");
         AssertEx.Equal<int?>(2, utf16.InitialOffset, "snippet offsets are UTF-16, not Unicode scalar indices");
         AssertEx.Equal(3, new SnippetSession(SnippetParser.Parse("abc$0"), 0).Current!.Start, "final-only snippet");
+    }
+
+    private static void SignatureHelpNavigationRegression()
+    {
+        var selection = new SignatureHelpSelection();
+        var before = new SignatureHelp(new[] { new SignatureInformation("f(int)"), new SignatureInformation("f(string)") }, 0);
+        selection.SetHelp(before);
+        AssertEx.Equal(0, selection.SelectedIndex, "server default signature");
+        AssertEx.True(selection.Move(1), "manual next signature");
+        AssertEx.Equal(1, selection.SelectedIndex, "next signature selected");
+        selection.SetHelp(new SignatureHelp(new[] { new SignatureInformation("f(string)"), new SignatureInformation("f(int)") }, 1));
+        AssertEx.Equal(0, selection.SelectedIndex, "manual signature retained by label after reordering");
+        AssertEx.True(selection.Move(-1), "previous wraps to end");
+        AssertEx.Equal(1, selection.SelectedIndex, "previous signature wraps");
+        selection.SetHelp(new SignatureHelp(new[] { new SignatureInformation("g(float)") }, 0));
+        AssertEx.Equal(0, selection.SelectedIndex, "removed overload resets to server selection");
+        AssertEx.True(!selection.Move(1), "one signature cannot cycle");
+        selection.Reset();
+        AssertEx.True(selection.Help is null && !selection.Move(1), "hidden hints reset navigation state");
+    }
+
+    private static void SignatureHelpMatchingRegression()
+    {
+        static SignatureInformation Sig(string label, params string[] parameters) =>
+            new(label, Parameters: parameters.Select(p => new ParameterInformation(p)).ToArray());
+
+        var overloads = new SignatureHelp(new[]
+        {
+            Sig("Print(int value)", "int value"),
+            Sig("Print(string text)", "string text"),
+            Sig("Print(int value, string label)", "int value", "string label"),
+        });
+        var selection = new SignatureHelpSelection();
+        var number = SignatureCallScanner.Scan("Print(123")!;
+        AssertEx.Equal(0, number.ActiveArgument, "first argument index");
+        selection.SetHelp(overloads, number);
+        AssertEx.Equal(0, selection.SelectedIndex, "numeric overload by literal type");
+        var text = SignatureCallScanner.Scan("Print(\"hello, world\"")!;
+        AssertEx.Equal(1, text.SuppliedArguments, "commas inside strings do not split arguments");
+        selection.SetHelp(overloads, text);
+        AssertEx.Equal(1, selection.SelectedIndex, "string overload by literal type");
+
+        var second = SignatureCallScanner.Scan("Print(1, \"label\"")!;
+        AssertEx.Equal(1, second.ActiveArgument, "second argument index");
+        selection.SetHelp(overloads, second);
+        AssertEx.Equal(2, selection.SelectedIndex, "two-argument overload takes precedence");
+        AssertEx.True(selection.Move(-1), "manual arrow navigates previous overload");
+        AssertEx.Equal(1, selection.SelectedIndex, "manual overload is visible");
+        selection.SetHelp(new SignatureHelp(new[] { overloads.Signatures[1], overloads.Signatures[2], overloads.Signatures[0] }),
+            SignatureCallScanner.Scan("Print(1, \"new\"")!);
+        AssertEx.Equal(0, selection.SelectedIndex, "manual choice follows reordered provider results");
+        selection.SetHelp(overloads, SignatureCallScanner.Scan("Print(1, \"new\", 2")!);
+        AssertEx.Equal(2, selection.SelectedIndex, "changing argument index resets the manual choice");
+
+        var nested = SignatureCallScanner.Scan("Print(make(1, 2), [1, 2], { a: 1, b: 2 }, \"hi,there\", ")!;
+        AssertEx.Equal(4, nested.ActiveArgument, "nested containers do not affect outer argument index");
+        AssertEx.True(SignatureCallScanner.Scan("Print(1)") is null, "closed call has no active arguments");
+        AssertEx.Equal(1, SignatureCallScanner.Scan("Print(1 /* , ignored */, 2")!.ActiveArgument,
+            "comments do not add argument separators");
+        AssertEx.Equal(1, SignatureCallScanner.Scan("Print(1, /* comment */ ")!.ActiveArgument,
+            "comments inside the active argument are ignored");
+        AssertEx.Equal(1, SignatureCallScanner.Scan("Print(new Dictionary<string, List<int>>(), ")!.ActiveArgument,
+            "generic type commas do not inflate the parameter index");
+        AssertEx.Equal(1, SignatureCallScanner.Scan("Print(a < b > c, ")!.ActiveArgument,
+            "comparison operators are not generic argument lists");
+        var numericTypes = new SignatureHelp(new[]
+        {
+            Sig("Handle(int value)", "int value"),
+            Sig("Handle(double value)", "double value"),
+            Sig("Handle(string value)", "string value"),
+        });
+        selection.SetHelp(numericTypes, SignatureCallScanner.Scan("Handle(-12")!);
+        AssertEx.Equal(0, selection.SelectedIndex, "signed integers select an integer overload");
+        selection.SetHelp(numericTypes, SignatureCallScanner.Scan("Handle(1e3")!);
+        AssertEx.Equal(1, selection.SelectedIndex, "exponent notation selects a floating overload");
+        selection.SetHelp(numericTypes, SignatureCallScanner.Scan("Handle(12f")!);
+        AssertEx.Equal(1, selection.SelectedIndex, "floating-point suffix selects a floating overload");
+        selection.SetHelp(numericTypes, SignatureCallScanner.Scan("Handle('multiple chars'")!);
+        AssertEx.Equal(2, selection.SelectedIndex, "quoted JS string selects string overload");
+    }
+
+    private static void CompletionCommitCharacterRegression()
+    {
+        var method = new CompletionItem("WriteLine", CompletionItemKind.Method,
+            CommitCharacters: new[] { ".", "(", ";" });
+        AssertEx.True(CompletionCommitCharacters.Accepts(method, "."), "explicit punctuation commits");
+        AssertEx.True(!CompletionCommitCharacters.Accepts(method, ")"), "undeclared punctuation does not commit");
+        AssertEx.True(!CompletionCommitCharacters.Accepts(method, "ab"), "multi-character input is not intercepted");
+        AssertEx.True(!CompletionCommitCharacters.Accepts(method, "😀"), "surrogate pairs are not intercepted");
+        AssertEx.True(!CompletionCommitCharacters.Accepts(new CompletionItem("x"), "."), "no inferred commit characters");
+        AssertEx.Equal("WriteLine.", CompletionCommitCharacters.AppendOnce("WriteLine", "."), "typed character appended");
+        AssertEx.Equal("WriteLine.", CompletionCommitCharacters.AppendOnce("WriteLine.", "."), "duplicate punctuation suppressed");
+        var snippet = SnippetParser.Parse("call(${1:arg})$0");
+        AssertEx.Equal("call(arg).", CompletionCommitCharacters.AppendOnce(snippet.Text, "."), "snippet suffix");
+        AssertEx.Equal(9, snippet.Placeholders.Single(p => p.Index == 0).Start, "snippet caret stays before commit suffix");
     }
 
     private static void CompletionRankingRegression()
@@ -406,6 +514,16 @@ static class Tests
         AssertEx.True(!items.Any(s => s.Label == "Secret"), "private members are not offered from an unrelated class");
         var (strings, stringsAt) = Marked("csharp", "class C { void M() { var value = \"\"; value.| } }");
         AssertEx.True((await service.ProvideCompletionItemsAsync(strings, stringsAt, new())).Suggestions.Any(s => s.Label == "Length"), "local var inference drives member completion");
+        var (overload, overloadAt) = Marked("csharp", "class Overloads { void Pick(int n) {} void Pick(string s) {} void M() { string name = \"ok\"; Pick(name|); } }");
+        var overloadHelp = await service.ProvideSignatureHelpAsync(overload, overloadAt, new());
+        AssertEx.True(overloadHelp is { Signatures.Count: 2 } &&
+            overloadHelp.Signatures[overloadHelp.ActiveSignature].Label.Contains("string", StringComparison.Ordinal),
+            "Roslyn uses the variable's semantic type to select the corresponding overload");
+        var (numericOverload, numericOverloadAt) = Marked("csharp", "class Overloads { void Pick(int n) {} void Pick(string s) {} void M() { Pick(42|); } }");
+        var numericHelp = await service.ProvideSignatureHelpAsync(numericOverload, numericOverloadAt, new());
+        AssertEx.True(numericHelp is { Signatures.Count: 2 } &&
+            numericHelp.Signatures[numericHelp.ActiveSignature].Label.Contains("int", StringComparison.Ordinal),
+            "Roslyn picks the matching numeric overload");
         var (comment, commentAt) = Marked("csharp", "class C { void M() {\n// Console.|\n} }");
         AssertEx.True(!(await service.ProvideCompletionItemsAsync(comment, commentAt, new())).Suggestions.Any(s => s.Label == "WriteLine"), "no fabricated Console completions in comments");
         var (definition, definitionAt) = Marked("csharp", "class C { void M() { new Widget().Sp|in(); } }");
@@ -776,6 +894,26 @@ static class Tests
         return text;
     }
 
+    private static async Task CppFormattingAvailabilityRegressionAsync()
+    {
+        var missing = Path.Combine(Path.GetTempPath(), "missing-clang-format-" + Guid.NewGuid().ToString("N"));
+        var formatter = new CppClangFormatProvider(missing);
+        var model = new FakeModel("cpp", "int main(){", "return 0;", "}");
+        AssertEx.True(await formatter.ProvideDocumentFormattingEditsAsync(model, new FormattingOptions(), default) is null,
+            "Missing optional clang-format must not rewrite C++ source");
+        AssertEx.True(await formatter.ProvideDocumentRangeFormattingEditsAsync(model,
+            new LanguageRange(1, 1, 2, 10), new FormattingOptions(), default) is null,
+            "Missing optional clang-format range formatting must leave source unchanged");
+        using var canceled = new CancellationTokenSource();
+        canceled.Cancel();
+        try
+        {
+            await formatter.ProvideDocumentFormattingEditsAsync(model, new FormattingOptions(), canceled.Token);
+            throw new Exception("Canceled formatting should not start a process");
+        }
+        catch (OperationCanceledException) { }
+    }
+
     private static void NativeFormattingRegression()
     {
         var compact = "{\"a\":[1,2],\"b\":true}";
@@ -905,15 +1043,20 @@ static class Tests
         LanguageConfigurationStacking();
         EnterIndentationParity();
         SnippetSessionRegression();
+        CompletionCommitCharacterRegression();
+        SignatureHelpNavigationRegression();
+        SignatureHelpMatchingRegression();
         CompletionRankingRegression();
         NativeSourceDependencyRegression();
         UpstreamPortTests.Run();
         NativeSourcePortRegression();
         NativeFormattingRegression();
+        await CppFormattingAvailabilityRegressionAsync();
         NativeTreeRegression();
         await NativeSchemaRegressionAsync();
         await NativeHtmlCssContextRegressionAsync();
         await NativeCSharpRegressionAsync();
+        await AdvancedLanguageTests.RunAsync();
         await NativeCompilerBridgeRegressionAsync();
         NativeHtmlCssScannerRegression();
         await NativeProvidersRegressionAsync();

@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "notes": "Manual Windows x64 desktop acceptance for end-user editor behaviors not proven by portable unit tests or the headless Win2D canary.",
+  "cases": [
+    {
+      "id": "app-startup-exit",
+      "scenario": "Launch Release sample on a clean Windows desktop, open multiple samples, close and reopen the window",
+      "expect": "No crash, missing native dependency dialog, frozen UI or resource leak during disposal"
+    },
+    {
+      "id": "edit-undo-multicursor",
+      "scenario": "Insert, select, copy/paste, undo/redo and edit with multiple cursors, including CJK and supplementary Unicode",
+      "expect": "Text, selections and undo groups stay consistent; editing never duplicates input"
+    },
+    {
+      "id": "find-replace-diff",
+      "scenario": "Use regex find/replace, selection-limited replace, diff and folding on the sample documents",
+      "expect": "Correct matches, replacements, diff markers and folds with no stale layout"
+    },
+    {
+      "id": "completion-snippets",
+      "scenario": "Trigger C#/C++ completion, arrow/Enter selection, Tab/Shift+Tab snippet navigation and parameter hints",
+      "expect": "Correct popup position, committed text, focus and undo behavior"
+    },
+    {
+      "id": "wrapped-scroll-minimap",
+      "scenario": "Open long soft-wrapped lines, scroll quickly, select across wraps and use the minimap",
+      "expect": "Caret hit-testing, selection and minimap remain aligned and responsive"
+    },
+    {
+      "id": "themes-and-scaling",
+      "scenario": "Inspect light/dark, high contrast, 100/125/150/200% DPI and moving between monitors",
+      "expect": "Readable contrast, correct glyphs, selection/caret and stable layout after DPI changes"
+    },
+    {
+      "id": "release-package-consumer",
+      "scenario": "Use an independently installed x64 Release NuGet consumer rather than only the source-tree sample",
+      "expect": "Editor opens with its packaged native DLL, libclang, WinRT and XAML assets; basic editing works"
+    },
+    {
+      "id": "completion-commit-characters",
+      "scenario": "In a plain direct-input editor session, accept a completion item with a declared punctuation commit character; repeat with a character the item does not declare, then undo and redo",
+      "expect": "Declared punctuation is inserted once in the same undo step as the completion; undeclared input is not consumed; the editor keeps text focus"
+    },
+    {
+      "id": "snippet-choice-linked-stops",
+      "scenario": "Insert a snippet with a choice tabstop and a linked copy. Change choices with Up/Down, Home/End, Enter, Tab, Escape, and the pointer; edit a chosen placeholder and undo",
+      "expect": "The popup follows the active placeholder; linked copies mirror the chosen text; Tab advances exactly once; cancellation and undo preserve text and selection"
+    },
+    {
+      "id": "parameter-hints-overload-navigation",
+      "scenario": "Type calls with several overloads (one int, one string, multiple arguments). Check automatic signature selection and the active parameter. Click the popup up/down arrows and use Alt+Up/Alt+Down, then type another argument and retrigger help. Confirm the overload counter aligns with the signature for 1/20, 10/20 and 20/20 cases. Switch between VS Code and Visual Studio profiles and verify that arrow keys cycle overloads in Visual Studio without moving the caret; normal editor cursor movement resumes when the popup closes.",
+      "expect": "Visible pointer-operable arrows cycle overloads without taking editor focus. Known literal types and argument count pick the matching signature, and the current parameter is emphasized in the signature label; manual choice survives same-argument refresh and resets when the active argument changes. Out-of-range parameters are not falsely highlighted. The counter and signature remain baseline-aligned without changing position as the selected overload index grows."
+    },
+    {
+      "id": "rapid-document-switch-language",
+      "scenario": "Switch document URI and language repeatedly while completion, diagnostics, signature help, semantic tokens, and inlay hints are pending; close the editor during a request; repeat with parameter hints visible and with a signature request still in flight",
+      "expect": "Old responses never update the new document, disposed controls receive no late UI updates, and no native resource or LSP session is left bound to the old URI; no ObjectDisposedException from model/version/status callbacks"
+    },
+    {
+      "id": "dotnet10-package-consumer",
+      "scenario": "Build the standalone examples/NuGetWinUI3 consumer on .NET 10 for x64 and ARM64, then run x64 on Windows with a locally produced NuGet package.",
+      "expect": "All source and output paths use net10.0; the editor loads WinUI, native and XAML resources without any direct project references."
+    },
+    {
+      "id": "parameter-hints-close-dispose",
+      "scenario": "On the C# sample, show parameter information inside a method call, switch overloads using the popup arrows, then close the WinUI window. Repeat while parameter help is still loading and repeat across several window launches.",
+      "expect": "The window closes without ObjectDisposedException from MonacoTextModel.VersionId or MainWindow.UpdateStatus; no late popup, focus or model event touches disposed editor state."
+    },
+    {
+      "id": "shortcut-profiles-and-host-override",
+      "scenario": "Change the sample Keyboard shortcuts combo box from VS Code to Visual Studio and back; verify document formatting, word wrap, comment toggle and line deletion, then set/clear a custom binding from a WinUI host with TSF IME active. Try a malformed custom key chord and confirm the previous working bindings remain active.",
+      "expect": "The VS Code profile is the default, Visual Studio keybindings differ for supported commands, host overrides win and persist across profile changes, empty overrides unbind commands and TSF composition is not intercepted. Invalid overrides are rejected without losing existing shortcuts."
+    },
+    {
+      "id": "horizontal-scroll-short-line",
+      "scenario": "With word wrap enabled, type a short line into the SampleApp editor, resize the window, toggle minimap/overview ruler, switch between 100% and 150% display scaling, and scroll vertically",
+      "expect": "No horizontal scrollbar or draggable horizontal offset when content fits the actual text viewport, including when a vertical scrollbar is visible"
+    },
+    {
+      "id": "horizontal-scroll-long-line",
+      "scenario": "Disable word wrap, insert a line wider than the editor viewport, scroll horizontally, shorten the line, then re-enable word wrap",
+      "expect": "Horizontal scrolling is available for real overflow and disappears after the line fits or word wrap is enabled; the caret and minimap remain aligned"
+    },
+    {
+      "id": "sample-localized-shortcuts",
+      "scenario": "Switch SampleApp UI language between English, Simplified Chinese, Japanese, Korean and pseudolocalization while selecting Visual Studio and VS Code shortcut profiles",
+      "expect": "The keyboard shortcut heading and profile labels follow the selected UI language without changing the active keybinding scheme or any host overrides"
+    }
+  ]
+}

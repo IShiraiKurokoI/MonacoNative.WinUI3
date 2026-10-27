@@ -1,6 +1,6 @@
 {
-  "schemaVersion": 1,
-  "stage": "11-native-input-5c-tsf-only",
+  "schemaVersion": 2,
+  "stage": "native-tsf-only",
   "automation": {
     "portableProject": "tests/InputTests/MonacoNative.Input.Tests.csproj",
     "windowsProject": "tests/ManagedTests/MonacoNative.Managed.Tests.csproj"
@@ -43,7 +43,7 @@
       "expected": [
         "hiragana preedit remains model-aligned",
         "candidate window follows painted Monaco caret",
-        "selected proxy text can be reconverted through the native IME",
+        "selected model text can be reconverted through the native IME",
         "single undo"
       ],
       "backends": [
@@ -167,27 +167,27 @@
       "id": "japanese-reconversion",
       "language": "ja-JP",
       "inputMethod": "Microsoft IME",
-      "scenario": "Select an existing Japanese word in MonacoNative and invoke the IME reconversion command",
+      "scenario": "Select existing Japanese text in the Monaco model and request reconversion through an IME that supports reconversion",
       "expected": [
-        "selected text is mirrored exactly when it fits the bounded proxy window",
-        "native TextBox selection is the reconversion target",
-        "candidate/reconversion UI appears at the painted Monaco caret",
-        "committed replacement updates the Monaco selection and undo stack once"
+        "TSF reconversion targets the authoritative selected model range",
+        "no legacy TextBox mirror or duplicated edit is involved",
+        "IME candidate UI uses native TSF geometry when reconversion is offered",
+        "committed replacement updates selection and undo once"
       ],
       "backends": [
         "nativeTsf"
       ]
     },
     {
-      "id": "large-selection-bounded-proxy",
+      "id": "large-selection-native-tsf",
       "language": "zh-CN",
       "inputMethod": "Microsoft Pinyin",
-      "scenario": "Select more than 32768 UTF-16 code units in a multi-megabyte model, focus the editor, then type a replacement",
+      "scenario": "Select more than 32768 UTF-16 code units in a multi-megabyte model; replace it through native TSF and undo",
       "expected": [
-        "focus/selection synchronization mirrors at most the bounded proxy window instead of the whole model",
-        "proxy is centered around the active caret",
-        "first actual text edit replaces the authoritative Monaco selection",
-        "proxy window recenters after commit/cancel"
+        "native TSF text store reports the authoritative model selection without a TextBox mirror",
+        "replacement targets the entire Monaco selection, not a truncated text window",
+        "caret and selection stay coherent after commit, cancel and undo",
+        "no large per-focus text copy or excessive allocation"
       ],
       "backends": [
         "nativeTsf"
@@ -208,29 +208,14 @@
       ]
     },
     {
-      "id": "unicode-window-edge",
+      "id": "unicode-acp-boundary",
       "language": "und",
       "inputMethod": "Windows emoji panel / hardware keyboard",
-      "scenario": "Move the active caret so a proxy recenter would otherwise cut through a surrogate pair, combining sequence, ZWJ emoji or regional-indicator flag",
+      "scenario": "Move the caret and edit around a surrogate pair, combining sequence, ZWJ emoji and regional-indicator flag through native TSF",
       "expected": [
-        "mirror start/end expand to full text-element boundaries",
-        "no unmatched surrogate enters the proxy or model",
-        "emoji/combining cluster remains intact across recentering"
-      ],
-      "backends": [
-        "nativeTsf"
-      ]
-    },
-    {
-      "id": "runtime-backend-switch",
-      "language": "en-US",
-      "inputMethod": "US keyboard",
-      "scenario": "With no active composition, switch SampleApp between Native TSF and TextBox proxy, refocus editor, type and undo",
-      "expected": [
-        "status reports the requested and actual backend",
-        "document text and primary selection survive the switch",
-        "typing remains available after each switch",
-        "undo stack remains coherent"
+        "TSF ACP range boundaries never split surrogate pairs",
+        "no unmatched surrogate enters the authoritative Monaco model",
+        "emoji and combining clusters remain intact while moving, selecting and replacing"
       ],
       "backends": [
         "nativeTsf"
@@ -263,6 +248,34 @@
       "backends": [
         "nativeTsf"
       ]
+    },
+    {
+      "id": "window-destroy-while-composing",
+      "language": "zh-CN",
+      "inputMethod": "Microsoft Pinyin",
+      "scenario": "Start composition then close the editor window while the candidate UI is open",
+      "expected": [
+        "no crash or stale TSF callback after disposal",
+        "candidate UI closes and the native input handle is released"
+      ],
+      "backends": [
+        "nativeTsf"
+      ]
+    },
+    {
+      "id": "completion-punctuation-during-pinyin",
+      "language": "zh-CN",
+      "inputMethod": "Microsoft Pinyin",
+      "scenario": "Open a completion list, begin and cancel a composition while typing punctuation that is also a completion commit character",
+      "expected": [
+        "uncommitted composition stays owned by native TSF",
+        "no candidate text or punctuation is swallowed or duplicated",
+        "completion can commit normally after composition ends",
+        "undo restores the text and caret"
+      ],
+      "backends": [
+        "nativeTsf"
+      ]
     }
   ],
   "backendGate": {
@@ -270,5 +283,6 @@
       "nativeTsf"
     ],
     "releaseRule": "Every required Windows IME case must pass the nativeTsf backend before the final release gate is closed."
-  }
+  },
+  "description": "Windows desktop manual acceptance for the sole supported native TSF input path. Does not imply automatic execution."
 }

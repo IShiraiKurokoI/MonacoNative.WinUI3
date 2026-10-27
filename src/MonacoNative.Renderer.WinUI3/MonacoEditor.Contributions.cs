@@ -57,11 +57,14 @@ public sealed partial class MonacoEditor
 
     private Border? _parameterHintsPopup;
     private StackPanel? _parameterHintsContent;
+    private readonly List<TextBlock> _parameterHintLabels = new();
+    private readonly List<Button> _parameterHintNavigation = new();
     private CancellationTokenSource? _parameterHintsCts;
     private Task? _parameterHintsTask;
     private readonly DispatcherTimer _parameterHintsTimer = new() { Interval = TimeSpan.FromMilliseconds(90) };
     private long _parameterHintsRequestSequence;
     private SignatureHelp? _activeParameterHelp;
+    private readonly SignatureHelpSelection _parameterSignatureSelection = new();
     private MonacoPosition _parameterHintsAnchor;
     private bool _parameterHintsEnabled = true;
     public bool ParameterHintsEnabled
@@ -141,12 +144,13 @@ public sealed partial class MonacoEditor
         };
         ContributionLayer.Children.Add(_contributionPopup);
         InitializeSuggestWidget();
+        InitializeSnippetChoicePopup();
         _parameterHintsContent = new StackPanel { Spacing = 2 };
         _parameterHintsPopup = new Border
         {
             Visibility = Visibility.Collapsed, CornerRadius = new CornerRadius(4),
             BorderThickness = new Thickness(1), Padding = new Thickness(6),
-            MaxWidth = 540, MaxHeight = 240, IsHitTestVisible = false,
+            MaxWidth = 540, MaxHeight = 240, IsHitTestVisible = true,
             Child = _parameterHintsContent,
         };
         Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(_parameterHintsPopup, "Parameter hints");
@@ -193,6 +197,16 @@ public sealed partial class MonacoEditor
             "editor.action.triggerParameterHints", "editor.action.triggerParameterHints", "menu.category.editor", "editorTextFocus",
             () => new ValueTask(TriggerParameterHintsAsync()), true, 120,
             Keys(new EditorKeybinding("Ctrl+Shift+Space", 400))));
+        _commands.Register(new EditorCommandDefinition(
+            "editor.action.showNextParameterHint", "editor.action.triggerParameterHints", "menu.category.editor",
+            "editorTextFocus && parameterHintsVisible && !suggestWidgetVisible",
+            () => { CycleParameterHints(1); return ValueTask.CompletedTask; }, false, 0,
+            Keys(new EditorKeybinding("Alt+Down", 500))));
+        _commands.Register(new EditorCommandDefinition(
+            "editor.action.showPrevParameterHint", "editor.action.triggerParameterHints", "menu.category.editor",
+            "editorTextFocus && parameterHintsVisible && !suggestWidgetVisible",
+            () => { CycleParameterHints(-1); return ValueTask.CompletedTask; }, false, 0,
+            Keys(new EditorKeybinding("Alt+Up", 500))));
         _commands.Register(new EditorCommandDefinition(
             "editor.action.rename", "editor.action.rename", "menu.category.editor", "editorTextFocus && !editorReadonly",
             () => new ValueTask(TriggerRenameAsync()), true, 130,
@@ -408,6 +422,7 @@ public sealed partial class MonacoEditor
 
     public Task TriggerParameterHintsAsync(CancellationToken cancellationToken = default)
     {
+        if (IsDisposed || !_loaded) return Task.CompletedTask;
         CancelParameterHintsRequest();
         _parameterHintsCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.ShutdownToken);
         return ShowParameterHintsAsync(new SignatureHelpContext(SignatureHelpTriggerKind.Invoke), _parameterHintsCts.Token);
@@ -426,9 +441,12 @@ public sealed partial class MonacoEditor
     {
         CancelParameterHintsRequest();
         _activeParameterHelp = null;
+        _parameterSignatureSelection.Reset();
         if (_parameterHintsPopup?.Visibility != Visibility.Visible) return;
         _parameterHintsPopup.Visibility = Visibility.Collapsed;
         _parameterHintsContent?.Children.Clear();
+        _parameterHintLabels.Clear();
+        _parameterHintNavigation.Clear();
         _commands.SetContext("parameterHintsVisible", false);
     }
 
@@ -468,49 +486,153 @@ public sealed partial class MonacoEditor
 
     private async Task ShowParameterHintsAsync(SignatureHelpContext context, CancellationToken cancellationToken)
     {
+        if (IsDisposed || cancellationToken.IsCancellationRequested) return;
         var request = ++_parameterHintsRequestSequence;
         var caret = _active;
         var version = _model.VersionId;
+        // The provider may return a default active overload even while a later argument
+        // is being entered. Keep a bounded view of the call text for arity/literal matching.
+        var caretOffset = checked((int)_model.GetOffsetAt(caret));
+        var prefixStart = Math.Max(0, caretOffset - 8192);
+        var call = SignatureCallScanner.Scan(_model.GetTextRange((nuint)prefixStart, (nuint)(caretOffset - prefixStart)));
         var uri = DocumentUri;
         var language = LanguageId;
         var help = await _languages.ProvideSignatureHelpAsync(_languageDocument, ToLanguagePosition(caret), context, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
-        if (_disposed || !_loaded || request != _parameterHintsRequestSequence || version != _model.VersionId ||
+        if (IsDisposed || !_loaded || request != _parameterHintsRequestSequence || version != _model.VersionId ||
             !caret.Equals(_active) || uri != DocumentUri || language != LanguageId || _textInput?.IsComposing == true) return;
         if (help is null || help.Signatures.Count == 0)
         { HideParameterHints(); return; }
         if (_parameterHintsPopup is null || _parameterHintsContent is null) return;
         _activeParameterHelp = help;
+        _parameterSignatureSelection.SetHelp(help, call);
         _parameterHintsAnchor = caret;
+        RenderParameterHints();
+        // No Focus(), no HideSuggestWidget(): parameter hints and completion may coexist.
+    }
+
+    private void CycleParameterHints(int direction)
+    {
+        if (_disposed || _textInput?.IsComposing == true ||
+            _parameterHintsPopup?.Visibility != Visibility.Visible ||
+            !_parameterSignatureSelection.Move(direction)) return;
+        RenderParameterHints();
+    }
+
+    private void RenderParameterHints()
+    {
+        if (IsDisposed) return;
+        if (_parameterHintsPopup is null || _parameterHintsContent is null ||
+            _parameterSignatureSelection.Help is not { } help || help.Signatures.Count == 0) return;
         _parameterHintsContent.Children.Clear();
-        var selected = Math.Clamp(help.ActiveSignature, 0, help.Signatures.Count - 1);
+        _parameterHintLabels.Clear();
+        _parameterHintNavigation.Clear();
+        var selected = _parameterSignatureSelection.SelectedIndex;
         var signature = help.Signatures[selected];
-        void Text(string text, bool emphasized = false) => _parameterHintsContent.Children.Add(new TextBlock
+        TextBlock CreateText(string value, bool emphasized = false)
         {
-            Text = text, TextWrapping = TextWrapping.Wrap, MaxWidth = 500,
-            Foreground = new SolidColorBrush(_suggestForeground),
-            FontFamily = new FontFamily("Consolas"),
-            FontWeight = emphasized ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal,
-            Margin = new Thickness(4, 2, 4, 2),
-        });
-        Text((help.Signatures.Count > 1 ? $"{selected + 1}/{help.Signatures.Count}  " : string.Empty) + signature.Label, true);
-        if (!string.IsNullOrWhiteSpace(signature.Documentation)) Text(signature.Documentation!);
+            var label = new TextBlock
+            {
+                Text = value, TextWrapping = TextWrapping.Wrap, MaxWidth = 470,
+                Foreground = new SolidColorBrush(_suggestForeground),
+                FontFamily = new FontFamily("Consolas"),
+                FontWeight = emphasized ? Microsoft.UI.Text.FontWeights.SemiBold : Microsoft.UI.Text.FontWeights.Normal,
+                Margin = new Thickness(4, 2, 4, 2),
+            };
+            _parameterHintLabels.Add(label);
+            return label;
+        }
+        // Visual Studio parameter info keeps the overload controls on one baseline:
+        // up arrow, stable-width "n of m", down arrow, then the signature.
+        // Reserve enough counter width for the largest possible index, so the
+        // signature never shifts when the user moves from 9 to 10, etc.
+        var header = new Grid { ColumnSpacing = 6, VerticalAlignment = VerticalAlignment.Center };
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        if (help.Signatures.Count > 1)
+        {
+            var navigation = new StackPanel
+            {
+                Orientation = Orientation.Horizontal, Spacing = 0,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            Button CreateArrow(string glyph, string accessibleName, int direction)
+            {
+                var arrow = new Button
+                {
+                    Width = 17, Height = 20, Padding = new Thickness(0),
+                    IsTabStop = false, AllowFocusOnInteraction = false, BorderThickness = new Thickness(0),
+                    Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent),
+                    Content = new TextBlock
+                    {
+                        Text = glyph, FontSize = 9, TextAlignment = TextAlignment.Center,
+                        VerticalAlignment = VerticalAlignment.Center,
+                        FontFamily = new FontFamily("Segoe UI Symbol"),
+                    },
+                };
+                Microsoft.UI.Xaml.Automation.AutomationProperties.SetName(arrow, accessibleName);
+                ToolTipService.SetToolTip(arrow, accessibleName);
+                arrow.Click += (_, _) => CycleParameterHints(direction);
+                _parameterHintNavigation.Add(arrow);
+                return arrow;
+            }
+            navigation.Children.Add(CreateArrow("\u25B2", "Previous overload", -1));
+            var overloadCount = CreateText($"{selected + 1} of {help.Signatures.Count}", true);
+            overloadCount.VerticalAlignment = VerticalAlignment.Center;
+            overloadCount.TextAlignment = TextAlignment.Center;
+            // Consolas uses a fixed advance, approximately 8 pixels at the popup's font size.
+            overloadCount.MinWidth = Math.Max(48, $"{help.Signatures.Count} of {help.Signatures.Count}".Length * 8.5);
+            overloadCount.Margin = new Thickness(0);
+            navigation.Children.Add(overloadCount);
+            navigation.Children.Add(CreateArrow("\u25BC", "Next overload", 1));
+            header.Children.Add(navigation);
+        }
+        var signatureLine = CreateText(signature.Label);
+        signatureLine.VerticalAlignment = VerticalAlignment.Center;
+        signatureLine.Margin = new Thickness(0, 2, 2, 2);
+        Grid.SetColumn(signatureLine, 1);
+        header.Children.Add(signatureLine);
+        _parameterHintsContent.Children.Add(header);
+        if (!string.IsNullOrWhiteSpace(signature.Documentation))
+            _parameterHintsContent.Children.Add(CreateText(signature.Documentation!));
         if (signature.Parameters is { Count: > 0 } parameters)
         {
-            var index = signature.ActiveParameter ?? help.ActiveParameter;
-            // Out-of-range is an intentional upstream sentinel: do not falsely
-            // highlight the last parameter for an extra argument or middle rest.
-            if (index >= 0 && index < parameters.Count)
+            var index = _parameterSignatureSelection.CallContext?.ActiveArgument ?? signature.ActiveParameter ?? help.ActiveParameter;
+            // An extra argument must not be presented as the final declared parameter.
+            if (index >= 0 && (index < parameters.Count ||
+                (index >= parameters.Count && parameters[^1].Label.Contains("...", StringComparison.Ordinal))))
             {
-                Text($"{index + 1}/{parameters.Count}  {parameters[index].Label}", true);
-                if (!string.IsNullOrWhiteSpace(parameters[index].Documentation)) Text(parameters[index].Documentation!);
+                var active = Math.Min(index, parameters.Count - 1);
+                // Emphasize the active parameter in the signature itself, as in Visual Studio.
+                // Keep the separate parameter line for tooltips and long overload labels.
+                var searchFrom = Math.Max(0, signature.Label.IndexOf('(') + 1);
+                var match = -1;
+                for (var parameterIndex = 0; parameterIndex <= active; parameterIndex++)
+                {
+                    match = signature.Label.IndexOf(parameters[parameterIndex].Label, searchFrom, StringComparison.Ordinal);
+                    if (match < 0) break;
+                    searchFrom = match + parameters[parameterIndex].Label.Length;
+                }
+                if (match >= 0)
+                {
+                    var length = parameters[active].Label.Length;
+                    signatureLine.Text = string.Empty;
+                    signatureLine.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = signature.Label[..match] });
+                    signatureLine.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run
+                    {
+                        Text = signature.Label.Substring(match, length),
+                        FontWeight = Microsoft.UI.Text.FontWeights.Bold,
+                    });
+                    signatureLine.Inlines.Add(new Microsoft.UI.Xaml.Documents.Run { Text = signature.Label[(match + length)..] });
+                }
+                if (!string.IsNullOrWhiteSpace(parameters[active].Documentation))
+                    _parameterHintsContent.Children.Add(CreateText($"{parameters[active].Label}: {parameters[active].Documentation}"));
             }
         }
         ApplyParameterHintsPalette();
         _parameterHintsPopup.Visibility = Visibility.Visible;
         _commands.SetContext("parameterHintsVisible", true);
         PositionParameterHints();
-        // No Focus(), no HideSuggestWidget(): parameter hints and completion may coexist.
     }
 
     private void ApplyParameterHintsPalette()
@@ -518,9 +640,14 @@ public sealed partial class MonacoEditor
         if (_parameterHintsPopup is null) return;
         _parameterHintsPopup.Background = _suggestPopup?.Background ?? Brush(255, 37, 37, 38);
         _parameterHintsPopup.BorderBrush = _suggestPopup?.BorderBrush ?? Brush(255, 69, 69, 69);
-        if (_parameterHintsContent is not null)
-            foreach (var block in _parameterHintsContent.Children.OfType<TextBlock>())
-                block.Foreground = new SolidColorBrush(_suggestForeground);
+        foreach (var label in _parameterHintLabels)
+            label.Foreground = new SolidColorBrush(_suggestForeground);
+        foreach (var arrow in _parameterHintNavigation)
+        {
+            arrow.Foreground = new SolidColorBrush(_suggestForeground);
+            if (arrow.Content is TextBlock glyph)
+                glyph.Foreground = new SolidColorBrush(_suggestForeground);
+        }
     }
 
     private void PositionParameterHints()
@@ -769,7 +896,7 @@ public sealed partial class MonacoEditor
     /// <summary>Choose insertion (default) or full replacement for LSP InsertReplaceEdit.</summary>
     public bool SuggestReplaceMode { get; set; }
 
-    private async Task ApplyCompletionItemAsync(CompletionItem item, CancellationToken cancellationToken)
+    private async Task ApplyCompletionItemAsync(CompletionItem item, CancellationToken cancellationToken, string? commitCharacter = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (_isReadOnly || _disposed) return;
@@ -795,6 +922,8 @@ public sealed partial class MonacoEditor
         var raw = AdjustCompletionIndentation(item.SnippetText ?? item.InsertText ?? item.Label, range, item.InsertTextMode);
         var expansion = item.SnippetText is null ? null : SnippetParser.Parse(raw, SnippetVariables());
         var text = expansion?.Text ?? raw;
+        if (commitCharacter is not null)
+            text = CompletionCommitCharacters.AppendOnce(text, commitCharacter);
         var edits = new List<(int Start, int End, string Text, bool Main)> { (start, end, text, true) };
         foreach (var edit in item.AdditionalTextEdits ?? Array.Empty<LanguageTextEdit>())
         {
@@ -1182,6 +1311,7 @@ public sealed partial class MonacoEditor
 
     private void OnContributionsViewportChanged()
     {
+        PositionSnippetChoicePopup();
         PositionSuggestWidget();
         PositionParameterHints();
         PositionCodeLensControls();

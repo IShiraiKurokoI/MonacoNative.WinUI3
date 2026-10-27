@@ -8,6 +8,51 @@ internal static class Program
 
     public static int Main()
     {
+        Run("shortcut profiles: VS Code default, Visual Studio differences and host bindings", () =>
+        {
+            Equal(EditorShortcutScheme.VSCode, default(EditorShortcutScheme));
+            var code = EditorShortcutProfiles.Resolve(EditorShortcutScheme.VSCode, "editor.action.formatDocument")!;
+            var studio = EditorShortcutProfiles.Resolve(EditorShortcutScheme.VisualStudio, "editor.action.formatDocument")!;
+            True(code.SequenceEqual(new[] { "Shift+Alt+F" }), "VS Code document format shortcut");
+            True(studio.SequenceEqual(new[] { "Ctrl+K Ctrl+D" }), "Visual Studio format shortcut");
+            True(EditorShortcutProfiles.Resolve(EditorShortcutScheme.VisualStudio,
+                "editor.action.toggleLineComment")!.Count == 0, "Visual Studio must not inherit VS Code toggle binding");
+            True(EditorShortcutProfiles.Resolve(EditorShortcutScheme.VSCode,
+                "editor.action.toggleLineComment")!.Count == 1, "VS Code toggle comment shortcut");
+            True(EditorShortcutProfiles.Resolve(EditorShortcutScheme.VSCode, "cursorLeft") is null,
+                "Shared navigation shortcuts remain unchanged");
+            True(EditorShortcutProfiles.Resolve(EditorShortcutScheme.VisualStudio,
+                "editor.action.showNextParameterHint")!.SequenceEqual(new[] { "Down" }),
+                "Visual Studio cycles parameter overloads with Down when hints are visible");
+            True(EditorShortcutProfiles.Resolve(EditorShortcutScheme.VSCode,
+                "editor.action.showNextParameterHint")!.SequenceEqual(new[] { "Alt+Down" }),
+                "VS Code preserves Alt+Down overload cycling");
+            var overrideBinding = new EditorShortcutBinding("Ctrl+Alt+F", 1200, "editorTextFocus");
+            Equal("Ctrl+Alt+F", overrideBinding.Chord);
+            Equal(1200, overrideBinding.Weight);
+            Equal("Ctrl+/", EditorShortcutLabelFormatter.Format("Ctrl+OemQuestion"));
+            Equal("Ctrl+K Ctrl+F", EditorShortcutLabelFormatter.Format("Ctrl+K Ctrl+F"));
+            Equal("Alt+.", EditorShortcutLabelFormatter.Format("Alt+OemPeriod"));
+            Equal("Backspace", EditorShortcutLabelFormatter.Format("Back"));
+            Equal(string.Empty, EditorShortcutLabelFormatter.Format(null));
+            Equal(string.Empty, EditorShortcutLabelFormatter.Format("   "));
+        });
+
+        Run("editor horizontal extent respects the actual viewport", () =>
+        {
+            const double viewport = 782;
+            // ScrollViewer is narrower than its parent because of a border and
+            // a vertical scrollbar. The parent's width must not be used here.
+            Equal(viewport, EditorScrollMetrics.ViewportWidth(viewport, 800, 802));
+            Equal(viewport, EditorScrollMetrics.ExtentWidth(true, viewport, 68, 14, 700));
+            Equal(viewport, EditorScrollMetrics.ExtentWidth(false, viewport, 68, 14, 100));
+            Equal(1082d, EditorScrollMetrics.ExtentWidth(false, viewport, 68, 14, 1000));
+            Equal(782d, EditorScrollMetrics.ExtentWidth(true, viewport, 68, 14, 1000));
+            Equal(780d, EditorScrollMetrics.ViewportWidth(800, 780, 802));
+            Equal(800d, EditorScrollMetrics.ViewportWidth(0, 800, 802));
+            Equal(798d, EditorScrollMetrics.ViewportWidth(0, 0, 798));
+        });
+
         Run("IntelliSense selection: arrow wrapping, paging, empty list", () =>
         {
             var state = new SuggestionSelection();

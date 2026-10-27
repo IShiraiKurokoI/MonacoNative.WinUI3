@@ -72,18 +72,36 @@ def main() -> None:
     runtime = (ROOT / "scripts/install-windows-app-runtime-ci.ps1").read_text(encoding="utf-8")
     require("install-windows-app-runtime-ci.ps1" in workflow,
             "Windows job must install the required runtime before starting Win2D probes")
+    unified_command = "run: ./scripts/test-acceptance.ps1 -Mode Automated -Configuration ${{ matrix.configuration }} -RunPackages -PackageVersion 0.1.0-ci"
+    require(unified_command in workflow and "configuration: [Debug, Release]" in workflow,
+            "Windows CI must run Debug and Release through the same acceptance entry point")
     require(workflow.index("run: ./scripts/install-windows-app-runtime-ci.ps1") <
-            workflow.index("run: ./scripts/test-renderer-golden.ps1"),
-            "Windows runtime must be installed before running the renderer tests")
-    require("windows-renderer-headless-diagnostics" in workflow,
-            "Windows CI must upload render-probe logs even when the probes fail")
-    require('test-core.ps1 -Configuration Release -BuildOnly' in workflow,
-            'MSVC binary build must be separate from core, ABI and input CTest steps')
-    for label in ("core", "abi", "input"):
-        require(f"-L '^{label}$'" in workflow,
-                f"Windows CI must have an independently reported {label} CTest group")
-    require('Join-Path $PWD "artifacts/benchmarks/renderer-quick.json"' in workflow,
-            'Windows renderer CI must pass a rooted benchmark artifact path')
+            workflow.index(unified_command),
+            "Windows runtime must be installed before running the renderer probes")
+    require("windows-renderer-headless-diagnostics" in workflow and
+            "renderer-current-*.png" in workflow,
+            "Windows CI must upload render logs and a visually reviewable PNG")
+    acceptance = (ROOT / "scripts/test-acceptance.ps1").read_text(encoding="utf-8")
+    windows = (ROOT / "scripts/test-windows.ps1").read_text(encoding="utf-8")
+    core = (ROOT / "scripts/test-core.ps1").read_text(encoding="utf-8")
+    layered = (ROOT / "scripts/test.ps1").read_text(encoding="utf-8")
+    require("scripts/test.ps1" in acceptance.replace("\\", "/") and "-Layer All" in acceptance,
+            "Acceptance must invoke the common layered Windows test runner")
+    required_layers = ("Build", "Core", "Services", "WinUI", "Integration", "Packages")
+    require(all(f"'{layer}'" in layered for layer in required_layers),
+            "Layered runner must keep compile, native, services, WinUI and package results distinct")
+    for entry in ("test-core.ps1", "build-windows.ps1", "test-portable-managed.ps1",
+                  "test-language-integration.ps1", "test-renderer-golden.ps1",
+                  "run-renderer-benchmarks.ps1", "test-native-build-validation.ps1",
+                  "test-package.ps1", "check-parity-release.py"):
+        require(entry in layered, f"Missing required test entry point from layered runner: {entry}")
+    require("-RequireGoldenBaseline:$strict" in acceptance and
+            "-RequireBaseline:$RequireGoldenBaseline" in layered,
+            "Release must require approved renderer baseline")
+    require("ctest --test-dir $build --output-on-failure" in core and "[switch]$TestOnly" in core,
+            "The native runner must support separate build and CTest stages")
+    require("-Mode Release" in (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8"),
+            "Release workflow must run the strict acceptance entry point")
     require("2.4.0/windowsappruntimeinstall-x64.exe" in runtime and "'--quiet'" in runtime,
             "Runtime installer must be version-pinned and silent")
     require("WaitForExit(240000)" in runtime,
@@ -99,6 +117,8 @@ def main() -> None:
     for name, content in (("Golden probe", golden_script), ("Renderer benchmarks", benchmark_script)):
         require("invoke-headless-renderer.ps1" in content and "dotnet run --project" not in content,
                 f"{name} must directly run its EXE through the watchdog")
+    require("$RequireBaseline" in golden_script and "--baseline" in golden_script and "renderer-current-${dpi}dpi.png" in golden_script,
+            "Release golden test must check approved baseline and emit actual PNG")
 
     # Strict language acceptance is separate from optional unit-only runs.
     language_runner = (ROOT / "scripts/test-language-integration.ps1").read_text(encoding="utf-8")
@@ -113,10 +133,9 @@ def main() -> None:
     require("$env:MONACONATIVE_NATIVE_LIBRARY = $oldNative" in language_runner and
             "$env:MONACONATIVE_LIBCLANG = $oldClang" in language_runner,
             "Language test overrides must be restored after the strict test run")
-    required_step = "run: ./scripts/test-language-integration.ps1 -Configuration Release -Platform x64"
-    require(required_step in workflow, "Windows CI must invoke required language acceptance")
-    require(workflow.index("run: ./scripts/test-core.ps1 -Configuration Release -BuildOnly") <
-            workflow.index(required_step), "Windows CI must build native dependencies first")
+    require("test-language-integration.ps1" in layered and "test-core.ps1" in layered and
+            layered.index("'Build' {") < layered.index("'Services' {"),
+            "Windows test runner must build native dependencies before services integration")
     require('MONACONATIVE_NATIVE_LIBRARY="$PWD/build/src/MonacoNative.Core.Native/libMonacoNative.Core.Native.so" '
             'dotnet run --project tests/LanguageTests/MonacoNative.Language.Tests.csproj -c Release -- --require-native' in workflow,
             "Linux GCC acceptance must not skip its built native bridge")
@@ -129,7 +148,16 @@ def main() -> None:
     require("IntegrationRequirementsRegression();" in language_tests,
             "Required/optional/invalid argument cases must remain in the existing managed test suite")
 
-    print("Windows headless smoke guards OK: ABI DLL staging, WinAppSDK runtime, noninteractive Win2D probes, watchdog, logs and required language acceptance")
+    acceptance_runner = (ROOT / 'scripts/test-acceptance.ps1').read_text(encoding='utf-8')
+    require("-Platform ARM64 -CoreOnly" in layered and "scripts/test.ps1" in acceptance_runner,
+            'Packages layer must cross-check the ARM64 native DLL using the shipping validator')
+    validator = (ROOT / 'scripts/test-native-build-validation.ps1').read_text(encoding='utf-8')
+    require("[switch]$CoreOnly" in validator,
+            'Cross-host ARM64 validation must explicitly skip publish fixture requiring a deployed sample')
+    require(validator.count("$global:LASTEXITCODE = 0") >= 2,
+            "Expected-negative MSBuild cases must clear their exit code after the validation suite passes")
+
+    print("Windows headless smoke guards OK: unified, DLL staging, baseline-gated Win2D PNG, watchdog, logs and native language integration")
 
 
 if __name__ == "__main__":

@@ -18,24 +18,24 @@ with zipfile.ZipFile(p) as z:
         required={
           'runtimes/win-x64/native/MonacoNative.Core.Native.dll',
           'runtimes/win-arm64/native/MonacoNative.Core.Native.dll',
-          'lib/net8.0-windows10.0.26100.0/MonacoNative.Core.Managed.dll',
-          'lib/net8.0-windows10.0.26100.0/MonacoNative.Renderer.WinUI3.dll',
-          'lib/net8.0-windows10.0.26100.0/MonacoNative.EditorServices.dll',
-          'lib/net8.0-windows10.0.26100.0/MonacoNative.Language.dll',
-          'lib/net8.0-windows10.0.26100.0/MonacoNative.Language.Json.dll',
-          'lib/net8.0-windows10.0.26100.0/MonacoNative.Language.Html.dll',
-          'lib/net8.0-windows10.0.26100.0/MonacoNative.Language.Css.dll',
-          'lib/net8.0-windows10.0.26100.0/MonacoNative.Language.TypeScript.dll',
-          'lib/net8.0-windows10.0.26100.0/MonacoNative.Language.CSharp.dll',
-          'lib/net8.0-windows10.0.26100.0/MonacoNative.Language.Cpp.dll',
-          'buildTransitive/net8.0-windows10.0.26100.0/MonacoNative.WinUI3.targets',
+          'lib/net10.0-windows10.0.26100.0/MonacoNative.Core.Managed.dll',
+          'lib/net10.0-windows10.0.26100.0/MonacoNative.Renderer.WinUI3.dll',
+          'lib/net10.0-windows10.0.26100.0/MonacoNative.EditorServices.dll',
+          'lib/net10.0-windows10.0.26100.0/MonacoNative.Language.dll',
+          'lib/net10.0-windows10.0.26100.0/MonacoNative.Language.Json.dll',
+          'lib/net10.0-windows10.0.26100.0/MonacoNative.Language.Html.dll',
+          'lib/net10.0-windows10.0.26100.0/MonacoNative.Language.Css.dll',
+          'lib/net10.0-windows10.0.26100.0/MonacoNative.Language.TypeScript.dll',
+          'lib/net10.0-windows10.0.26100.0/MonacoNative.Language.CSharp.dll',
+          'lib/net10.0-windows10.0.26100.0/MonacoNative.Language.Cpp.dll',
+          'buildTransitive/net10.0-windows10.0.26100.0/MonacoNative.WinUI3.targets',
         }
     if p.name.startswith('MonacoNative.WinRT.CoreHost.') and 'lib/native/_._' in names and z.read('lib/native/_._'):
         raise SystemExit('native NuGet placeholder lib/native/_._ must be zero bytes')
     missing=sorted(required-names)
     if missing: raise SystemExit('package missing required assets: '+', '.join(missing))
     if not p.name.startswith('MonacoNative.WinRT.CoreHost.'):
-        tfm='lib/net8.0-windows10.0.26100.0/'
+        tfm='lib/net10.0-windows10.0.26100.0/'
         if not any(n.startswith(tfm) and n.endswith('.pri') for n in names):
             raise SystemExit('package missing WinUI PRI resource output')
         if not any(n.startswith(tfm) and n.endswith('.xbf') for n in names):
