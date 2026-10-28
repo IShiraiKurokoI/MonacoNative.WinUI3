@@ -1,4 +1,5 @@
 using MonacoNative.Language;
+using MonacoNative.Documents;
 using System.Globalization;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
@@ -22,6 +23,7 @@ public sealed partial class MainWindow : Window
 
     private bool _refreshingThemeOptions;
     private bool _refreshingShortcutSchemes;
+    private bool _suppressSampleSelection;
     private bool _updatingFeatureToggles;
     private bool _updatingMenuOptions;
     private readonly SemaphoreSlim _sampleLoadLock = new(1, 1);
@@ -77,6 +79,11 @@ public sealed partial class MainWindow : Window
         UiLanguageBox.SelectedItem = Editor.UiLanguage;
         Editor.UiLanguageChanged += Editor_UiLanguageChanged;
         Editor.ModelChanged += (_, _) => UpdateStatus();
+        Editor.ActiveDocumentChanged += (_, _) => { UpdateStatus(); UpdateLanguageServiceStatus(); };
+        Editor.DocumentOpened += (_, _) => UpdateStatus();
+        Editor.DocumentClosed += (_, _) => UpdateStatus();
+        Editor.DocumentSaved += (_, _) => UpdateStatus();
+        Editor.DocumentOperationFailed += (_, args) => ProfileReportHint.Text = args.Exception.Message;
         Editor.FoldingChanged += (_, _) => UpdateStatus();
         Editor.Loaded += (_, _) => UpdateStatus();
         Editor.GotFocus += (_, _) => UpdateStatus();
@@ -96,11 +103,14 @@ public sealed partial class MainWindow : Window
         InitializeMenuOptions();
         SynchronizeFeatureToggles();
         SampleBox.ItemsSource = Samples;
-        SampleBox.SelectedIndex = 2; // Preformatted C# sample; semantic services run in-process through Roslyn.
+        _suppressSampleSelection = true;
+        SampleBox.SelectedIndex = 2; // Keep the sample selector on the C# sample.
+        _suppressSampleSelection = false;
         ApplyLocalization();
         ApplyTheme(ElementTheme.Dark);
         RefreshThemeOptions();
         UpdateStatus();
+        _ = LoadInitialSamplesAsync();
     }
 
     private void ShortcutSchemeBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -137,7 +147,51 @@ public sealed partial class MainWindow : Window
 
     private void SampleBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (Editor is not null) LoadSelectedSample();
+        if (!_suppressSampleSelection && Editor is not null) LoadSelectedSample();
+    }
+
+    private async Task LoadInitialSamplesAsync()
+    {
+        if (_closing || Editor.IsDisposed) return;
+        _sampleLoadCancellation?.Cancel();
+        var cancellation = new CancellationTokenSource();
+        _sampleLoadCancellation = cancellation;
+        try
+        {
+            await _sampleLoadLock.WaitAsync(cancellation.Token);
+            try
+            {
+                // Start with three real file-backed tabs to make cross-language tab
+                // switching and drag-reorder behavior immediately discoverable.
+                foreach (var sample in new[]
+                {
+                    Samples.Single(item => item.LanguageId == "css"),
+                    Samples.Single(item => item.LanguageId == "html"),
+                    Samples.Single(item => item.LanguageId == "csharp"),
+                })
+                {
+                    cancellation.Token.ThrowIfCancellationRequested();
+                    if (_closing || Editor.IsDisposed) return;
+                    var path = ResolveSamplePath(sample);
+                    await Editor.OpenDocumentAsync(new FileDocumentProvider(path, sample.LanguageId),
+                        cancellation.Token, focusEditor: false);
+                }
+                UpdateLanguageServiceStatus();
+                UpdateStatus();
+            }
+            finally { _sampleLoadLock.Release(); }
+        }
+        catch (OperationCanceledException) { /* A newer sample selection superseded startup loading. */ }
+        catch (Exception ex)
+        {
+            if (!cancellation.IsCancellationRequested && !_closing && !Editor.IsDisposed)
+                ProfileReportHint.Text = string.Format(Editor.GetLocalizedString("monacoNative.sample.loadError"), ex.Message);
+        }
+        finally
+        {
+            if (ReferenceEquals(_sampleLoadCancellation, cancellation)) _sampleLoadCancellation = null;
+            cancellation.Dispose();
+        }
     }
 
     private static string ResolveSamplePath(SampleAsset sample) =>
@@ -170,12 +224,10 @@ public sealed partial class MainWindow : Window
                         [new Uri(modulePath)] = moduleText
                     });
                 }
-                var contents = await File.ReadAllTextAsync(path, cancellation.Token);
+                await Editor.OpenDocumentAsync(new FileDocumentProvider(path, sample.LanguageId), cancellation.Token,
+                    focusEditor: false);
                 cancellation.Token.ThrowIfCancellationRequested();
                 if (_closing || Editor.IsDisposed) return;
-                Editor.LanguageId = sample.LanguageId;
-                Editor.DocumentUri = new Uri(path);
-                Editor.Text = contents;
                 // Source assets are already formatted. Do not mutate them using the demo's
                 // simplified formatter on every load; the Format button is explicit.
                 // Built-in providers execute directly in-process. Loading a sample must
@@ -234,6 +286,7 @@ public sealed partial class MainWindow : Window
         {
             WordWrapToggle, WhitespaceToggle, MinimapToggle, IndentGuidesToggle, FoldingToggle,
             OverviewToggle, BracketColorsToggle, CodeLensToggle, InlineCompletionToggle, StickyScrollToggle,
+            ShowTabsToggle, MultiTabToggle,
         };
     }
 
@@ -249,10 +302,12 @@ public sealed partial class MainWindow : Window
         "codeLens" => Editor.CodeLensEnabled,
         "inlineCompletion" => Editor.InlineCompletionsEnabled,
         "stickyScroll" => Editor.StickyScrollEnabled,
+        "showTabs" => Editor.ShowTabs,
+        "multiTab" => Editor.IsMultiTabEnabled,
         _ => false
     };
 
-    private void EditorFeature_Click(object sender, RoutedEventArgs e)
+    private async void EditorFeature_Click(object sender, RoutedEventArgs e)
     {
         if (_closing || _updatingFeatureToggles || Editor is null || Editor.IsDisposed || sender is not ToggleMenuFlyoutItem toggle || toggle.Tag is not string key)
             return;
@@ -260,6 +315,13 @@ public sealed partial class MainWindow : Window
         // its new state is committed. Toggle from the editor's authoritative
         // current value, never from the menu item's possibly stale IsChecked.
         var enabled = !GetFeatureState(key);
+        if (key == "multiTab")
+        {
+            try { await Editor.SetMultiTabEnabledAsync(enabled); }
+            catch (OperationCanceledException) { }
+            catch (Exception error) { ProfileReportHint.Text = error.Message; }
+            if (_closing || Editor.IsDisposed) return;
+        }
         switch (key)
         {
             case "wordWrap": Editor.WordWrap = enabled; break;
@@ -272,18 +334,30 @@ public sealed partial class MainWindow : Window
             case "codeLens": Editor.CodeLensEnabled = enabled; break;
             case "inlineCompletion": Editor.InlineCompletionsEnabled = enabled; break;
             case "stickyScroll": Editor.StickyScrollEnabled = enabled; break;
+            case "showTabs": Editor.ShowTabs = enabled; break;
         }
         // Keep the menu check and editor state synchronized in this same Click.
         toggle.IsChecked = GetFeatureState(key);
         // Some view options control XAML overlays and do not explicitly request
         // a full paint. Commit the effective state before the flyout closes.
         Editor.CommitViewOptions();
+        UpdateStatus();
         _ = DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
         {
             // Also reconcile if the MenuFlyoutItem template updates IsChecked
             // after its Click handlers have run.
             SynchronizeFeatureToggles();
         });
+    }
+
+    private void TabBarToggle_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_closing || _updatingFeatureToggles || Editor is null || Editor.IsDisposed || TabBarToggle is null) return;
+        var showTabs = TabBarToggle.IsChecked == true;
+        if (Editor.ShowTabs != showTabs) Editor.ShowTabs = showTabs;
+        Editor.CommitViewOptions();
+        SynchronizeFeatureToggles();
+        UpdateStatus();
     }
 
     private void SynchronizeFeatureToggles()
@@ -297,6 +371,8 @@ public sealed partial class MainWindow : Window
                 if (toggle.Tag is string key)
                     toggle.IsChecked = GetFeatureState(key);
             }
+            TabBarToggle.IsChecked = Editor.ShowTabs;
+            TabBarToggle.Content = Editor.GetLocalizedString("monacoNative.sample.tabBarToggle");
         }
         finally { _updatingFeatureToggles = false; }
     }
@@ -457,6 +533,7 @@ public sealed partial class MainWindow : Window
             if (option.Tag is string key)
                 option.Text = Editor.GetLocalizedString("monacoNative.sample." + key);
         }
+        SynchronizeFeatureToggles();
         InitializeMenuOptions();
         UpdateLanguageServiceStatus();
         ThemeLabel.Text = Editor.GetLocalizedString("monacoNative.sample.theme");
@@ -489,6 +566,8 @@ public sealed partial class MainWindow : Window
             $"MonacoNativeTestState;Length={document.Length};Version={document.VersionId};" +
             $"Cursor={Editor.PointerCursorState};Profile={(Editor.MethodProfilingEnabled ? "on" : "off")};" +
             $"Theme={Editor.RequestedTheme};Folds={Editor.AvailableFoldCount};Collapsed={Editor.CollapsedFoldCount};" +
-            $"Language={language.LanguageId};Backend=Native;PortStatus={language.SourcePortStatus}");
+            $"Language={language.LanguageId};Backend=Native;PortStatus={language.SourcePortStatus};" +
+            $"DocumentCount={Editor.Documents.Count};ActiveDocumentUri={Uri.EscapeDataString(Editor.DocumentUri.AbsoluteUri)};" +
+            $"IsDirty={Editor.ActiveDocument.IsDirty};ShowTabs={Editor.ShowTabs};MultiTab={Editor.IsMultiTabEnabled}");
     }
 }

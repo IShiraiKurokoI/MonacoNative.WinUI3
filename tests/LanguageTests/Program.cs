@@ -1056,6 +1056,7 @@ static class Tests
         await NativeSchemaRegressionAsync();
         await NativeHtmlCssContextRegressionAsync();
         await NativeCSharpRegressionAsync();
+        await WorkspaceSnapshotTests.RunAsync();
         await AdvancedLanguageTests.RunAsync();
         await NativeCompilerBridgeRegressionAsync();
         NativeHtmlCssScannerRegression();
@@ -1601,6 +1602,11 @@ internal static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        if (args is ["--workspace-snapshots-only"])
+        {
+            await WorkspaceSnapshotTests.RunAsync();
+            return 0;
+        }
         IntegrationRequirements requirements;
         try
         {

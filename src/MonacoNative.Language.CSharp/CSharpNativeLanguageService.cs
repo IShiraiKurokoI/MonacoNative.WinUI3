@@ -23,6 +23,12 @@ public sealed class CSharpLanguageOptions
 {
     public IReadOnlyList<string> MetadataReferencePaths { get; init; } = Array.Empty<string>();
     public IReadOnlyDictionary<Uri, string> Documents { get; init; } = new Dictionary<Uri, string>();
+    /// <summary>
+    /// Optional immutable snapshot of open C# documents. When supplied, overrides Documents.
+    /// Called on the requesting thread before compiler work is dispatched. Do not read live
+    /// editor models from this callback; publish copied URI/text snapshots instead.
+    /// </summary>
+    public Func<IReadOnlyList<NativeLanguageDocument>>? DocumentsProvider { get; init; }
     public IReadOnlyList<string> PreprocessorSymbols { get; init; } = Array.Empty<string>();
     public IReadOnlyList<string> GlobalUsings { get; init; } = new[]
     { "System", "System.Collections.Generic", "System.Linq", "System.Threading", "System.Threading.Tasks" };
@@ -52,6 +58,8 @@ public sealed partial class CSharpNativeLanguageService : ICompletionItemProvide
     private readonly ProjectId _projectId = ProjectId.CreateNewId();
     private readonly Dictionary<Uri, DocumentId> _documents = new();
     private readonly Dictionary<Uri, long> _revisions = new();
+    private readonly HashSet<Uri> _providedDocumentUris = new();
+    private long _providedDocumentsRevision;
     private long _nextRequest;
     private bool _disposed;
     public CSharpNativeLanguageService(CSharpLanguageOptions? options = null) => _options = options ?? new();
@@ -88,7 +96,8 @@ public sealed partial class CSharpNativeLanguageService : ICompletionItemProvide
             if (_options.GlobalUsings.Count > 0)
                 workspace.AddDocument(_projectId, "__MonacoGlobalUsings.g.cs", SourceText.From(string.Join("\n", _options.GlobalUsings.Select(ns => "global using " + ns + ";"))));
             _workspace = workspace;
-            foreach (var pair in _options.Documents) UpdateDocument(pair.Key, pair.Value);
+            if (_options.DocumentsProvider is null)
+                foreach (var pair in _options.Documents) UpdateDocument(pair.Key, pair.Value);
         }
         catch { workspace.Dispose(); _workspace = null; _documents.Clear(); _revisions.Clear(); throw; }
     }
@@ -128,6 +137,7 @@ public sealed partial class CSharpNativeLanguageService : ICompletionItemProvide
     {
         // Capture on the caller's thread before moving expensive compiler work off the UI thread.
         var uri = model.Uri; var text = model.GetValue();
+        var documents = _options.DocumentsProvider?.Invoke().ToArray();
         var order = Interlocked.Increment(ref _nextRequest);
         return Task.Run(() =>
         {
@@ -136,17 +146,59 @@ public sealed partial class CSharpNativeLanguageService : ICompletionItemProvide
             {
                 EnsureWorkspace();
                 ct.ThrowIfCancellationRequested();
+                if (documents is not null)
+                    SynchronizeProvidedDocuments(documents, uri, order);
                 // A delayed older worker may use its own immutable document, but must not
                 // roll the shared project back after a newer request has updated it.
-                if (_revisions.TryGetValue(uri, out var latest) && order < latest &&
-                    _documents.TryGetValue(uri, out var existing))
-                    return _workspace!.CurrentSolution.WithDocumentText(existing, SourceText.From(text),
-                        PreservationMode.PreserveIdentity).GetDocument(existing)!;
+                if (_revisions.TryGetValue(uri, out var latest) && order < latest)
+                {
+                    if (_documents.TryGetValue(uri, out var existing))
+                        return _workspace!.CurrentSolution.WithDocumentText(existing, SourceText.From(text),
+                            PreservationMode.PreserveIdentity).GetDocument(existing)!;
+                    // A newer workspace snapshot may already have closed this document.
+                    // Analyze the old request without adding it back to the live workspace.
+                    var transient = DocumentId.CreateNewId(_projectId);
+                    var name = Path.GetFileName(uri.IsFile ? uri.LocalPath : uri.AbsolutePath);
+                    return _workspace!.CurrentSolution.AddDocument(transient,
+                        string.IsNullOrEmpty(name) ? "untitled.cs" : name, SourceText.From(text),
+                        filePath: uri.IsFile ? uri.LocalPath : null).GetDocument(transient)!;
+                }
                 var document = UpdateDocument(uri, text);
                 _revisions[uri] = order;
                 return document;
             }
         }, ct);
+    }
+
+    private void SynchronizeProvidedDocuments(IReadOnlyList<NativeLanguageDocument> documents,
+        Uri requestUri, long revision)
+    {
+        if (revision < _providedDocumentsRevision) return;
+        var snapshot = new Dictionary<Uri, string>();
+        foreach (var document in documents)
+        {
+            ArgumentNullException.ThrowIfNull(document);
+            ArgumentNullException.ThrowIfNull(document.Uri);
+            ArgumentNullException.ThrowIfNull(document.Text);
+            snapshot[document.Uri] = document.Text;
+        }
+        foreach (var uri in _providedDocumentUris.Where(uri => uri != requestUri && !snapshot.ContainsKey(uri)).ToArray())
+        {
+            if (_revisions.TryGetValue(uri, out var latest) && latest > revision) continue;
+            if (_documents.Remove(uri, out var id))
+                Apply(_workspace!.CurrentSolution.RemoveDocument(id));
+            // Keep a revision tombstone so an older request cannot reopen this file.
+            _revisions[uri] = revision;
+        }
+        foreach (var pair in snapshot)
+        {
+            if (pair.Key == requestUri || _revisions.TryGetValue(pair.Key, out var latest) && latest > revision) continue;
+            UpdateDocument(pair.Key, pair.Value);
+            _revisions[pair.Key] = revision;
+        }
+        _providedDocumentUris.Clear();
+        _providedDocumentUris.UnionWith(snapshot.Keys);
+        _providedDocumentsRevision = revision;
     }
     private void Apply(Solution solution)
     { if (!_workspace!.TryApplyChanges(solution)) throw new InvalidOperationException("The C# workspace rejected an update."); }

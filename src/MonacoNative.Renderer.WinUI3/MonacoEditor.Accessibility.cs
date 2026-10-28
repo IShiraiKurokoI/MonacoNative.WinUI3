@@ -35,10 +35,10 @@ public sealed partial class MonacoEditor
     {
         get
         {
-            if (_view.ViewLineCount <= 0 || ActualHeight <= 0)
+            if (_view.ViewLineCount <= 0 || EditorViewportHeight <= 0)
                 return Array.Empty<AccessibilityOffsetRange>();
             var top = Math.Max(0, ScrollHost.VerticalOffset - VerticalPadding);
-            var bottom = Math.Max(top, ScrollHost.VerticalOffset + ActualHeight - VerticalPadding);
+            var bottom = Math.Max(top, ScrollHost.VerticalOffset + EditorViewportHeight - VerticalPadding);
             var first = Math.Clamp(_view.GetViewLineAtVerticalOffset(top), 1, _view.ViewLineCount);
             var last = Math.Clamp(_view.GetViewLineAtVerticalOffset(bottom), first, _view.ViewLineCount);
             var result = new List<AccessibilityOffsetRange>();
@@ -108,11 +108,11 @@ public sealed partial class MonacoEditor
     {
         start = Math.Clamp(start, 0, AccessibilityLength);
         end = Math.Clamp(end, start, AccessibilityLength);
-        if (start == end || _layoutCache is null || _view.ViewLineCount <= 0 || ActualHeight <= 0)
+        if (start == end || _layoutCache is null || _view.ViewLineCount <= 0 || EditorViewportHeight <= 0)
             return Array.Empty<double>();
 
         var top = Math.Max(0, ScrollHost.VerticalOffset - VerticalPadding);
-        var bottom = Math.Max(top, ScrollHost.VerticalOffset + ActualHeight - VerticalPadding);
+        var bottom = Math.Max(top, ScrollHost.VerticalOffset + EditorViewportHeight - VerticalPadding);
         var first = Math.Clamp(_view.GetViewLineAtVerticalOffset(top), 1, _view.ViewLineCount);
         var last = Math.Clamp(_view.GetViewLineAtVerticalOffset(bottom), first, _view.ViewLineCount);
         var values = new List<double>();
@@ -250,7 +250,7 @@ public sealed partial class MonacoEditor
         var strategy = alignToTop ? MonacoRevealStrategy.Top : MonacoRevealStrategy.Bottom;
         var top = _view.GetScrollTopToReveal(
             range,
-            Math.Max(1, ActualHeight - (VerticalPadding * 2)),
+            Math.Max(1, EditorViewportHeight - (VerticalPadding * 2)),
             ScrollHost.VerticalOffset,
             strategy,
             _lineHeight);
@@ -289,8 +289,8 @@ public sealed partial class MonacoEditor
     {
         var left = Math.Max(0, rect.X);
         var top = Math.Max(0, rect.Y);
-        var right = Math.Min(Math.Max(0, ActualWidth), rect.Right);
-        var bottom = Math.Min(Math.Max(0, ActualHeight), rect.Bottom);
+        var right = Math.Min(Math.Max(0, EditorViewportWidth), rect.Right);
+        var bottom = Math.Min(Math.Max(0, EditorViewportHeight), rect.Bottom);
         return right <= left || bottom <= top ? new Rect(0, 0, 0, 0) : new Rect(left, top, right - left, bottom - top);
     }
 }

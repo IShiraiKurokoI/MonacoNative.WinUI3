@@ -184,6 +184,28 @@ internal static class Program
             Equal("还原此差异", zh.GetString("monacoNative.diff.revertChange"));
             var ja = new MonacoLocalizationService("ja-JP");
             var ko = new MonacoLocalizationService("ko-KR");
+            var tabMenuKeys = new[]
+            {
+                "monacoNative.tabs.close", "monacoNative.tabs.closeOthers", "monacoNative.tabs.closeToRight",
+                "monacoNative.tabs.closeSaved", "monacoNative.tabs.closeAll", "monacoNative.tabs.save",
+                "monacoNative.tabs.saveAs", "monacoNative.tabs.compareSelected", "monacoNative.tabs.copyPath",
+                "monacoNative.tabs.copyRelativePath", "monacoNative.tabs.revealFileInExplorer",
+                "monacoNative.tabs.revealInExplorerView", "monacoNative.tabs.openInIntegratedTerminal",
+                "monacoNative.tabs.reopenEditorWith", "monacoNative.tabs.keepOpen", "monacoNative.tabs.pin",
+                "monacoNative.tabs.unpin", "monacoNative.tabs.splitRight", "monacoNative.tabs.splitAndMove",
+                "monacoNative.tabs.splitLeft", "monacoNative.tabs.splitUp", "monacoNative.tabs.splitDown",
+                "monacoNative.tabs.moveAbove", "monacoNative.tabs.moveBelow", "monacoNative.tabs.moveLeft",
+                "monacoNative.tabs.moveRight", "monacoNative.tabs.splitInGroup", "monacoNative.tabs.joinInGroup",
+                "monacoNative.tabs.moveIntoNewWindow", "monacoNative.tabs.copyIntoNewWindow", "monacoNative.tabs.share",
+            };
+            foreach (var key in tabMenuKeys)
+            {
+                var english = en.GetString(key);
+                True(!string.IsNullOrWhiteSpace(english) && english != key, $"English tab-menu resource missing: {key}");
+                True(zh.GetString(key) != english, $"Chinese tab-menu translation missing: {key}");
+                True(ja.GetString(key) != english, $"Japanese tab-menu translation missing: {key}");
+                True(ko.GetString(key) != english, $"Korean tab-menu translation missing: {key}");
+            }
             Equal("元に戻す", ja.GetString("undo"));
             Equal("실행 취소", ko.GetString("undo"));
             ja.SetCulture("ja");

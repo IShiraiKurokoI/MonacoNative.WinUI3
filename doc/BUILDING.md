@@ -20,8 +20,7 @@ Install the C++ and .NET desktop development workloads and required SDKs. Open `
 Do not use `-Mode Release` until Windows x64 manual acceptance and a reviewed golden
 baseline have been committed for that version. Release mode *must* fail otherwise.
 The repository requires the .NET 10 SDK. The Windows App SDK and Win2D
-versions are pinned separately; see [Roadmap](ROADMAP.md) and
-[Packaging](PACKAGING.md).
+versions are pinned separately; see [Packaging](PACKAGING.md).
 
 Normal Visual Studio builds do not require Python, Ninja, or an upstream source checkout. Maintenance and test scripts have their own prerequisites; see [testing](TESTING.md).
 

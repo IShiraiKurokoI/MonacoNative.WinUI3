@@ -114,6 +114,7 @@ public sealed class MonacoLanguageService
     public IDisposable RegisterCodeActionProvider(LanguageSelector selector, ICodeActionProvider provider) => _codeAction.Register(selector, provider);
     public IDisposable RegisterReferenceProvider(LanguageSelector selector, IReferenceProvider provider) => _reference.Register(selector, provider);
     public IDisposable RegisterRenameProvider(LanguageSelector selector, IRenameProvider provider) => _rename.Register(selector, provider);
+    public bool HasRenameProvider(ILanguageTextModel model) => _rename.Matching(model).Count > 0;
     public IDisposable RegisterColorProvider(LanguageSelector selector, IColorProvider provider) => _color.Register(selector, provider);
     public IDisposable RegisterInlineCompletionsProvider(LanguageSelector selector, IInlineCompletionsProvider provider) => _inlineCompletion.Register(selector, provider);
     public IDisposable RegisterCodeLensProvider(LanguageSelector selector, ICodeLensProvider provider) => _codeLens.Register(selector, provider);

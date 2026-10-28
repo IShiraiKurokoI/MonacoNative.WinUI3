@@ -63,9 +63,19 @@
                                       AutomationProperties.AutomationId="Option_inlineCompletion" Click="EditorFeature_Click" />
                                 <ToggleMenuFlyoutItem x:Name="StickyScrollToggle" Text="Sticky Scroll" Tag="stickyScroll"
                                       AutomationProperties.AutomationId="Option_stickyScroll" Click="EditorFeature_Click" />
+                                <MenuFlyoutSeparator />
+                                <ToggleMenuFlyoutItem x:Name="ShowTabsToggle" Text="Show File Tabs" Tag="showTabs"
+                                      AutomationProperties.AutomationId="ShowTabsToggle" Click="EditorFeature_Click" />
+                                <ToggleMenuFlyoutItem x:Name="MultiTabToggle" Text="Multiple Documents" Tag="multiTab"
+                                      AutomationProperties.AutomationId="MultiTabToggle" Click="EditorFeature_Click" />
                             </MenuFlyout>
                         </DropDownButton.Flyout>
                     </DropDownButton>
+                    <ToggleButton x:Name="TabBarToggle" Content="Tab Bar"
+                                  AutomationProperties.AutomationId="TabBarToggle"
+                                  MinWidth="78" Height="32" VerticalAlignment="Center" CornerRadius="7"
+                                  Foreground="{ThemeResource ToolbarForegroundBrush}"
+                                  Checked="TabBarToggle_Changed" Unchecked="TabBarToggle_Changed" />
                     <Button x:Name="FormatSampleButton" Content="Format" Click="FormatSample_Click" MinHeight="32" VerticalAlignment="Center"
                             AutomationProperties.AutomationId="FormatSampleButton" />
                     <TextBlock x:Name="SampleLabel" Text="Example" VerticalAlignment="Center" Margin="6,0,0,0" />
@@ -134,7 +144,7 @@
                 </ScrollViewer>
             </Border>
             <renderer:MonacoEditor x:Name="Editor" AutomationProperties.AutomationId="MonacoEditorSurface"
-                                   Grid.Column="1" RequestedTheme="Dark">
+                                   Grid.Column="1" RequestedTheme="Dark" ShowTabs="True" IsMultiTabEnabled="True">
                 <!-- Mode also gates keyboard command execution, unlike legacy Visibility/IsEnabled.
                      Default for non-basic, non-toggle commands: ShortcutOnly. -->
                 <renderer:MonacoEditor.ContextMenuItemOptions>

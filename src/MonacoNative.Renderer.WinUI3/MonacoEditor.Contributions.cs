@@ -20,6 +20,8 @@ public sealed class WorkspaceTextEditRequestedEventArgs : EventArgs
 {
     public WorkspaceTextEditRequestedEventArgs(WorkspaceTextEdit edit) => Edit = edit;
     public WorkspaceTextEdit Edit { get; }
+    /// <summary>Set true after applying this external edit. Prefer ExternalWorkspaceEditHandler for a batch.</summary>
+    public bool Handled { get; set; }
 }
 
 public sealed partial class MonacoEditor
@@ -34,6 +36,7 @@ public sealed partial class MonacoEditor
     private readonly DispatcherTimer _contributionRefreshTimer = new() { Interval = TimeSpan.FromMilliseconds(70) };
     private bool _contributionRefreshFull;
     private IReadOnlyList<CodeAction> _cachedCodeActions = Array.Empty<CodeAction>();
+    private EditorRequestIdentity? _cachedCodeActionsRequest;
     private readonly List<(CodeLens Lens, Button Button)> _codeLensControls = new();
     private IReadOnlyList<MonacoRange> _findMatches = Array.Empty<MonacoRange>();
     private int _findMatchIndex = -1;
@@ -46,6 +49,7 @@ public sealed partial class MonacoEditor
     public bool IsReplaceOpen => IsFindOpen && ReplaceRow.Visibility == Visibility.Visible;
     private ulong _inlineCompletionDecorationId;
     private InlineCompletion? _activeInlineCompletion;
+    private EditorRequestIdentity? _activeInlineCompletionRequest;
     private bool _inlineCompletionsEnabled = true;
     private bool _codeLensEnabled = true;
     private bool _stickyScrollEnabled = true;
@@ -407,8 +411,10 @@ public sealed partial class MonacoEditor
 
     public async Task ShowHoverAsync(MonacoPosition position, CancellationToken cancellationToken = default)
     {
+        var request = CaptureEditorRequest();
         var normalized = Normalize(position.LineNumber, position.Column);
-        var hover = await _languages.ProvideHoverAsync(_languageDocument, ToLanguagePosition(normalized), cancellationToken);
+        var hover = await _languages.ProvideHoverAsync(request.Snapshot, ToLanguagePosition(normalized), cancellationToken);
+        if (cancellationToken.IsCancellationRequested || !IsEditorRequestCurrent(request)) return;
         if (hover is null || hover.Contents.Count == 0)
         {
             HideContributionPopup();
@@ -653,12 +659,12 @@ public sealed partial class MonacoEditor
     private void PositionParameterHints()
     {
         if (_parameterHintsPopup?.Visibility != Visibility.Visible) return;
-        var width = Math.Max(120, Math.Min(540, ActualWidth - GutterWidth - 8));
+        var width = Math.Max(120, Math.Min(540, EditorViewportWidth - GutterWidth - 8));
         _parameterHintsPopup.MaxWidth = width;
         _parameterHintsPopup.Measure(new Size(width, 240));
         var height = Math.Min(240, _parameterHintsPopup.DesiredSize.Height);
         var point = GetViewportPoint(_parameterHintsAnchor, belowLine: false);
-        var x = Math.Clamp(point.X, GutterWidth, Math.Max(GutterWidth, ActualWidth - width - 4));
+        var x = Math.Clamp(point.X, GutterWidth, Math.Max(GutterWidth, EditorViewportWidth - width - 4));
         var y = point.Y - height - 4;
         if (y < 4)
         {
@@ -671,56 +677,18 @@ public sealed partial class MonacoEditor
             }
         }
         Canvas.SetLeft(_parameterHintsPopup, x);
-        Canvas.SetTop(_parameterHintsPopup, Math.Clamp(y, 4, Math.Max(4, ActualHeight - height - 4)));
-    }
-
-    public async Task TriggerRenameAsync(CancellationToken cancellationToken = default)
-    {
-        if (_isReadOnly) return;
-        var position = ToLanguagePosition(_active);
-        var location = await _languages.ResolveRenameLocationAsync(_languageDocument, position, cancellationToken);
-        var wordRange = location?.Range ?? ToLanguageRange(GetWordRangeAtCaret());
-        if (!string.IsNullOrWhiteSpace(location?.RejectReason))
-        {
-            ShowAnchoredPopup(_active, "editor.action.rename");
-            AddPopupText(location!.RejectReason!);
-            return;
-        }
-
-        var range = wordRange.Normalize();
-        var initial = location?.Text ?? _model.GetValueInRange(ToMonacoRange(range));
-        ShowAnchoredPopup(_active, "editor.action.rename");
-        var box = new TextBox { Text = initial, MinWidth = 240, PlaceholderText = Local("monacoNative.rename.placeholder") };
-        _contributionPopupContent!.Children.Add(box);
-        box.SelectAll();
-        box.Focus(FocusState.Programmatic);
-        box.KeyDown += async (_, e) =>
-        {
-            if (e.Key == VirtualKey.Enter)
-            {
-                e.Handled = true;
-                var edit = await _languages.ProvideRenameEditsAsync(_languageDocument, position, box.Text, cancellationToken);
-                if (edit is not null)
-                    await ApplyWorkspaceEditAsync(edit, cancellationToken);
-                HideContributionPopup();
-                Focus(FocusState.Programmatic);
-            }
-            else if (e.Key == VirtualKey.Escape)
-            {
-                e.Handled = true;
-                HideContributionPopup();
-                Focus(FocusState.Programmatic);
-            }
-        };
+        Canvas.SetTop(_parameterHintsPopup, Math.Clamp(y, 4, Math.Max(4, EditorViewportHeight - height - 4)));
     }
 
     public async Task ShowReferencesAsync(CancellationToken cancellationToken = default)
     {
+        var request = CaptureEditorRequest();
         var references = await _languages.ProvideReferencesAsync(
-            _languageDocument,
-            ToLanguagePosition(_active),
+            request.Snapshot,
+            request.Position,
             new ReferenceContext(IncludeDeclaration: true),
             cancellationToken);
+        if (cancellationToken.IsCancellationRequested || !IsEditorRequestCurrent(request, checkSelection: true)) return;
         if (references.Count == 0)
         {
             HideContributionPopup();
@@ -734,7 +702,8 @@ public sealed partial class MonacoEditor
             var captured = location;
             AddPopupButton(LocationLabel(location), () =>
             {
-                NavigateToLocation(captured);
+                if (!cancellationToken.IsCancellationRequested && IsEditorRequestCurrent(request))
+                    NavigateToLocation(captured);
                 return Task.CompletedTask;
             });
         }
@@ -742,9 +711,12 @@ public sealed partial class MonacoEditor
 
     public async Task ShowCodeActionsAsync(CancellationToken cancellationToken = default)
     {
-        var actions = _cachedCodeActions.Count > 0
+        var request = CaptureEditorRequest();
+        var actions = _cachedCodeActions.Count > 0 && _cachedCodeActionsRequest is { } cachedRequest &&
+            IsEditorRequestCurrent(cachedRequest, checkSelection: true)
             ? _cachedCodeActions
-            : await ProvideCodeActionsAsync(cancellationToken: cancellationToken);
+            : await _languages.ProvideCodeActionsAsync(request.Snapshot, request.Selection, new CodeActionContext(), cancellationToken);
+        if (cancellationToken.IsCancellationRequested || !IsEditorRequestCurrent(request, checkSelection: true)) return;
         if (actions.Count == 0)
         {
             HideContributionPopup();
@@ -760,9 +732,12 @@ public sealed partial class MonacoEditor
                 label += $" — {action.DisabledReason}";
             AddPopupButton(label, async () =>
             {
+                if (cancellationToken.IsCancellationRequested || !IsEditorRequestCurrent(request) || _isReadOnly) return;
+                // Close this menu before an action can await host work or navigate. Its
+                // completion must not dismiss a newer popup opened in the meantime.
+                HideContributionPopup();
                 if (string.IsNullOrWhiteSpace(captured.DisabledReason))
                     await ApplyCodeActionAsync(captured, cancellationToken);
-                HideContributionPopup();
             }, enabled: string.IsNullOrWhiteSpace(action.DisabledReason));
         }
     }
@@ -770,8 +745,10 @@ public sealed partial class MonacoEditor
     public async Task ShowColorPickerAsync(CancellationToken cancellationToken = default)
     {
         if (_isReadOnly) return;
-        var colors = await _languages.ProvideDocumentColorsAsync(_languageDocument, cancellationToken);
-        var info = colors.FirstOrDefault(c => RangeContains(c.Range, ToLanguagePosition(_active)));
+        var request = CaptureEditorRequest();
+        var colors = await _languages.ProvideDocumentColorsAsync(request.Snapshot, cancellationToken);
+        if (cancellationToken.IsCancellationRequested || !IsEditorRequestCurrent(request, checkSelection: true) || _isReadOnly) return;
+        var info = colors.FirstOrDefault(c => RangeContains(c.Range, request.Position));
         if (info is null)
         {
             HideContributionPopup();
@@ -788,12 +765,14 @@ public sealed partial class MonacoEditor
         _contributionPopupContent!.Children.Add(picker);
         AddPopupButton(Local("monacoNative.action.applyColor"), async () =>
         {
+            if (cancellationToken.IsCancellationRequested || !IsEditorRequestCurrent(request) || _isReadOnly) return;
             var color = picker.Color;
             var updated = info with
             {
                 Color = new LanguageColor(color.R / 255.0, color.G / 255.0, color.B / 255.0, color.A / 255.0),
             };
-            var presentations = await _languages.ProvideColorPresentationsAsync(_languageDocument, updated, cancellationToken);
+            var presentations = await _languages.ProvideColorPresentationsAsync(request.Snapshot, updated, cancellationToken);
+            if (cancellationToken.IsCancellationRequested || !IsEditorRequestCurrent(request) || _isReadOnly) return;
             var presentation = presentations.FirstOrDefault();
             if (presentation is null) return;
             var edits = new List<LanguageTextEdit>();
@@ -801,7 +780,7 @@ public sealed partial class MonacoEditor
             else edits.Add(new LanguageTextEdit(info.Range, presentation.Label));
             if (presentation.AdditionalTextEdits is not null) edits.AddRange(presentation.AdditionalTextEdits);
             ApplyLanguageTextEdits(edits);
-            HideContributionPopup();
+            if (IsEditorRequestCurrent(request, checkVersion: false)) HideContributionPopup();
         });
     }
 
@@ -813,16 +792,20 @@ public sealed partial class MonacoEditor
             return;
         }
 
+        var request = CaptureEditorRequest();
         var completions = await _languages.ProvideInlineCompletionsAsync(
-            _languageDocument,
-            ToLanguagePosition(_active),
+            request.Snapshot,
+            request.Position,
             new InlineCompletionContext(explicitTrigger ? InlineCompletionTriggerKind.Explicit : InlineCompletionTriggerKind.Automatic),
             cancellationToken);
+        if (cancellationToken.IsCancellationRequested || !IsEditorRequestCurrent(request, checkSelection: true) ||
+            !_inlineCompletionsEnabled || _isReadOnly) return;
         var item = completions.Items.FirstOrDefault();
         ClearInlineCompletion(updateProjection: false);
         if (item is null || string.IsNullOrEmpty(item.InsertText)) return;
 
         _activeInlineCompletion = item;
+        _activeInlineCompletionRequest = request.Identity;
         _inlineCompletionDecorationId = _view.AddInjectedText(
             _active,
             item.InsertText,
@@ -836,21 +819,28 @@ public sealed partial class MonacoEditor
     public async Task AcceptInlineCompletionAsync(CancellationToken cancellationToken = default)
     {
         var item = _activeInlineCompletion;
-        if (item is null) return;
+        if (item is null || _activeInlineCompletionRequest is not { } request) return;
+        if (cancellationToken.IsCancellationRequested || !IsEditorRequestCurrent(request, checkSelection: true) || _isReadOnly)
+        {
+            ClearInlineCompletion();
+            return;
+        }
         var range = item.Range is null
             ? new MonacoRange(_active.LineNumber, _active.Column, _active.LineNumber, _active.Column)
             : ToMonacoRange(item.Range.Value.Normalize());
         ClearInlineCompletion(updateProjection: false);
         ReplaceRangeAndMoveCaret(range, item.InsertText);
-        if (item.Command is not null)
+        if (item.Command is not null && IsEditorRequestCurrent(request, checkVersion: false))
             await item.Command(cancellationToken);
     }
 
     public async Task RefreshCodeLensAsync(CancellationToken cancellationToken = default)
     {
+        if (!_codeLensEnabled) { ClearCodeLensControls(); return; }
+        var request = CaptureEditorRequest();
+        var lenses = await _languages.ProvideCodeLensesAsync(request.Snapshot, cancellationToken);
+        if (cancellationToken.IsCancellationRequested || !IsEditorRequestCurrent(request) || !_codeLensEnabled) return;
         ClearCodeLensControls();
-        if (!_codeLensEnabled) return;
-        var lenses = await _languages.ProvideCodeLensesAsync(_languageDocument, cancellationToken);
         foreach (var lens in lenses.Take(200))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -867,8 +857,8 @@ public sealed partial class MonacoEditor
             };
             button.Click += async (_, _) =>
             {
-                if (captured.Command?.Execute is not null)
-                    await captured.Command.Execute(CancellationToken.None);
+                if (IsEditorRequestCurrent(request) && captured.Command?.Execute is not null)
+                    await captured.Command.Execute(_lifetime.ShutdownToken);
             };
             ContributionLayer.Children.Add(button);
             _codeLensControls.Add((lens, button));
@@ -879,18 +869,75 @@ public sealed partial class MonacoEditor
     public async Task ApplyWorkspaceEditAsync(WorkspaceEdit edit, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(edit);
-        var local = edit.Edits.Where(e => Equals(e.Uri, DocumentUri)).ToArray();
-        var external = edit.Edits.Where(e => !Equals(e.Uri, DocumentUri)).ToArray();
-        if (local.Length > 0)
+        VerifyDocumentAccess();
+        cancellationToken.ThrowIfCancellationRequested();
+        var plans = new List<EditorWorkspaceEditPlan>();
+        var external = new List<WorkspaceTextEdit>();
+        foreach (var group in edit.Edits.GroupBy(item => item.Uri, MonacoNative.Documents.EditorDocumentUriComparer.Instance))
         {
-            ApplyLanguageTextEdits(local.Select(e => new LanguageTextEdit(e.Range, e.Text)).ToArray());
+            if (FindWorkspaceDocument(group.Key) is { } document)
+                plans.Add(new EditorWorkspaceEditPlan(document, group));
+            else external.AddRange(group);
         }
-        foreach (var item in external)
+        // Never report a successful rename after silently dropping unopened targets.
+        // A host can implement loading/persistence/transactions for its own workspace.
+        if (external.Count > 0)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            WorkspaceTextEditRequested?.Invoke(this, new WorkspaceTextEditRequestedEventArgs(item));
+            if (ExternalWorkspaceEditHandler is { } handler)
+            {
+                if (!await handler(new WorkspaceEdit(external), cancellationToken))
+                    throw new InvalidOperationException("The host rejected the external workspace edits.");
+            }
+            else if (WorkspaceTextEditRequested is not null)
+            {
+                foreach (var item in external)
+                {
+                    var request = new WorkspaceTextEditRequestedEventArgs(item);
+                    WorkspaceTextEditRequested.Invoke(this, request);
+                    if (!request.Handled)
+                        throw new InvalidOperationException("The host did not apply an external workspace edit.");
+                }
+            }
+            else throw new InvalidOperationException("The rename includes unopened documents. Open those documents or register ExternalWorkspaceEditHandler.");
         }
-        await Task.CompletedTask;
+        cancellationToken.ThrowIfCancellationRequested();
+        VerifyDocumentAccess();
+        foreach (var plan in plans) plan.ValidateCurrent();
+        ApplyOpenWorkspaceEditPlans(plans);
+    }
+
+    private bool _applyingWorkspaceEdits;
+
+    private void ApplyOpenWorkspaceEditPlans(IReadOnlyList<EditorWorkspaceEditPlan> plans)
+    {
+        var previous = _applyingWorkspaceEdits;
+        _applyingWorkspaceEdits = true;
+        var transactions = new List<MonacoUndoTransaction>();
+        try
+        {
+            try
+            {
+                foreach (var plan in plans) transactions.Add(plan.Document.Model.BeginUndoTransaction());
+                foreach (var plan in plans) plan.Apply();
+                foreach (var transaction in transactions) transaction.Complete();
+            }
+            finally
+            {
+                // An uncompleted transaction restores its document on failure.
+                foreach (var transaction in transactions.AsEnumerable().Reverse()) transaction.Dispose();
+            }
+            foreach (var plan in plans) plan.Document.WorkspaceText = plan.Document.Model.Text;
+            UpdateWorkspaceSnapshots();
+            if (plans.Any(plan => plan.Document == _activeDocument))
+            {
+                _anchor = Normalize(_anchor.LineNumber, _anchor.Column);
+                _active = Normalize(_active.LineNumber, _active.Column);
+                ClearSecondarySelections();
+                AfterProjectionChanged(true);
+                OnSelectionChanged();
+            }
+        }
+        finally { _applyingWorkspaceEdits = previous; }
     }
 
     /// <summary>Choose insertion (default) or full replacement for LSP InsertReplaceEdit.</summary>
@@ -1019,8 +1066,8 @@ public sealed partial class MonacoEditor
         AddPopupText(Local(titleKey), emphasized: true);
         _contributionPopup.Visibility = Visibility.Visible;
         var point = GetViewportPoint(anchor, belowLine: true);
-        Canvas.SetLeft(_contributionPopup, Math.Clamp(point.X, GutterWidth, Math.Max(GutterWidth, ActualWidth - 560)));
-        Canvas.SetTop(_contributionPopup, Math.Clamp(point.Y, 4, Math.Max(4, ActualHeight - 350)));
+        Canvas.SetLeft(_contributionPopup, Math.Clamp(point.X, GutterWidth, Math.Max(GutterWidth, EditorViewportWidth - 560)));
+        Canvas.SetTop(_contributionPopup, Math.Clamp(point.Y, 4, Math.Max(4, EditorViewportHeight - 350)));
         _commands.SetContext("contributionPopupVisible", true);
     }
 
@@ -1134,14 +1181,18 @@ public sealed partial class MonacoEditor
 
     private async Task RefreshContributionStateAsync(bool full, CancellationToken cancellationToken)
     {
+        var request = CaptureEditorRequestIdentity();
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
             await RefreshLightBulbAsync(cancellationToken);
+            if (cancellationToken.IsCancellationRequested || !IsEditorRequestCurrent(request, checkSelection: true)) return;
             if (_inlineCompletionsEnabled)
                 await RefreshInlineCompletionAsync(explicitTrigger: false, cancellationToken);
+            if (cancellationToken.IsCancellationRequested || !IsEditorRequestCurrent(request, checkSelection: true)) return;
             if (full && _codeLensEnabled)
                 await RefreshCodeLensAsync(cancellationToken);
+            if (cancellationToken.IsCancellationRequested || !IsEditorRequestCurrent(request, checkSelection: true)) return;
             UpdateStickyScroll();
         }
         catch (OperationCanceledException)
@@ -1156,7 +1207,11 @@ public sealed partial class MonacoEditor
 
     private async Task RefreshLightBulbAsync(CancellationToken cancellationToken)
     {
-        _cachedCodeActions = await ProvideCodeActionsAsync(cancellationToken: cancellationToken);
+        var request = CaptureEditorRequest();
+        var actions = await _languages.ProvideCodeActionsAsync(request.Snapshot, request.Selection, new CodeActionContext(), cancellationToken);
+        if (cancellationToken.IsCancellationRequested || !IsEditorRequestCurrent(request, checkSelection: true)) return;
+        _cachedCodeActions = actions;
+        _cachedCodeActionsRequest = request.Identity;
         if (_lightBulbButton is null) return;
         if (_cachedCodeActions.Count == 0 || _isReadOnly)
         {
@@ -1165,7 +1220,7 @@ public sealed partial class MonacoEditor
         }
         var point = GetViewportPoint(_active, belowLine: false);
         Canvas.SetLeft(_lightBulbButton, Math.Max(2, GutterWidth - 34));
-        Canvas.SetTop(_lightBulbButton, Math.Clamp(point.Y, 0, Math.Max(0, ActualHeight - 30)));
+        Canvas.SetTop(_lightBulbButton, Math.Clamp(point.Y, 0, Math.Max(0, EditorViewportHeight - 30)));
         _lightBulbButton.Visibility = Visibility.Visible;
         ToolTipService.SetToolTip(_lightBulbButton, Local("editor.action.quickFix"));
     }
@@ -1180,6 +1235,7 @@ public sealed partial class MonacoEditor
             removed = true;
         }
         _activeInlineCompletion = null;
+        _activeInlineCompletionRequest = null;
         _commands.SetContext("inlineSuggestionVisible", false);
         if (removed && updateProjection && _loaded && !_disposed)
             AfterProjectionChanged(false);
@@ -1199,7 +1255,7 @@ public sealed partial class MonacoEditor
             var line = Math.Clamp(lens.Range.StartLineNumber, 1, checked((int)_model.LineCount));
             var point = GetViewportPoint(new MonacoPosition(line, 1), belowLine: false);
             var y = point.Y - 18;
-            button.Visibility = y < -24 || y > ActualHeight ? Visibility.Collapsed : Visibility.Visible;
+            button.Visibility = y < -24 || y > EditorViewportHeight ? Visibility.Collapsed : Visibility.Visible;
             Canvas.SetLeft(button, GutterWidth + LeftPadding);
             Canvas.SetTop(button, Math.Max(0, y));
         }
@@ -1279,6 +1335,7 @@ public sealed partial class MonacoEditor
 
     private void OnContributionsSelectionChanged()
     {
+        OnRenameEditorStateChanged();
         CancelAutomaticSuggestions();
         ScheduleAutomaticParameterHints(retriggerOnly: true);
         var continuation = _completionListIncomplete && _completionContinuationVersion == _model.VersionId &&
@@ -1289,17 +1346,18 @@ public sealed partial class MonacoEditor
 
     private void OnContributionsModelChanged()
     {
+        OnRenameEditorStateChanged();
         using var methodSample = _methodProfiler.Measure("OnContributionsModelChanged");
         ClearInlineCompletion(updateProjection: false);
         HideSuggestWidget(preserveCompletionSession: true);
         ScheduleContributionRefresh(full: true);
         // ModelChanged fires before the edit's final caret update. Queue suggestions after
         // the selection transaction, otherwise OnSelectionChanged immediately cancels them.
-        var editVersion = _model.VersionId;
+        var editRequest = CaptureEditorRequestIdentity();
         if (!_suppressAutoSuggest && _textInput?.IsComposing != true)
             _ = DispatcherQueue.TryEnqueue(() =>
             {
-                if (!_disposed && _model.VersionId == editVersion)
+                if (IsEditorRequestCurrent(editRequest))
                 {
                     ScheduleAutomaticSuggestions();
                     ScheduleAutomaticParameterHints();
@@ -1311,6 +1369,7 @@ public sealed partial class MonacoEditor
 
     private void OnContributionsViewportChanged()
     {
+        PositionRenameWidget();
         PositionSnippetChoicePopup();
         PositionSuggestWidget();
         PositionParameterHints();
@@ -1319,7 +1378,7 @@ public sealed partial class MonacoEditor
         if (_lightBulbButton?.Visibility == Visibility.Visible)
         {
             var point = GetViewportPoint(_active, belowLine: false);
-            Canvas.SetTop(_lightBulbButton, Math.Clamp(point.Y, 0, Math.Max(0, ActualHeight - 30)));
+            Canvas.SetTop(_lightBulbButton, Math.Clamp(point.Y, 0, Math.Max(0, EditorViewportHeight - 30)));
         }
     }
 
@@ -1496,6 +1555,7 @@ public sealed partial class MonacoEditor
 
     private void RefreshContributionLocalization()
     {
+        RefreshRenamePalette();
         FindTextBox.PlaceholderText = Local("actions.find");
         ReplaceTextBox.PlaceholderText = Local("editor.action.startFindReplaceAction");
         FindMatchCase.Content = "Aa";
@@ -1543,12 +1603,13 @@ public sealed partial class MonacoEditor
         return new[]
         {
             _nativeDiagnosticsTask, _foldingRefreshTask, _lspRefreshTask,
-            _contributionRefreshTask, _suggestTask, _parameterHintsTask
+            _contributionRefreshTask, _suggestTask, _parameterHintsTask, _renameTask
         }.Where(task => task is { IsCompleted: false }).Cast<Task>().Distinct().ToArray();
     }
 
     private void DisposeContributions()
     {
+        CancelRenameSession();
         HideParameterHints();
         _parameterHintsTimer.Tick -= ParameterHintsTimer_Tick;
         CancelAutomaticSuggestions();

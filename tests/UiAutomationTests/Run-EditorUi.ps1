@@ -123,6 +123,11 @@ public static class WinUiTestMouse {
     Check ($editor.Current.ControlType -eq [System.Windows.Automation.ControlType]::Document) 'editor exposes UIA Document peer'
 
     [WinUiTestMouse]::SetForegroundWindow($script:app.MainWindowHandle) | Out-Null
+    # The sample starts in C#. Select the explicit C++ asset needed by this test.
+    $sampleBox = Until { FindById $window 'SampleBox' } 'example selector'
+    $sampleBox.SetFocus()
+    [System.Windows.Forms.SendKeys]::SendWait('{HOME}{DOWN}{DOWN}{DOWN}{ENTER}')
+    Until { $state.Current.Name -match 'Language=cpp(?:;|$)' } 'initial C++ asset selected' | Out-Null
     ClickElement $load
     $source = Until { $text = GetEditorText $editor; if ($text -like '*#include*') { return $text } } 'sample loading'
     Check ($source.Contains('int main()')) 'sample load updates real editor text model'
@@ -137,7 +142,10 @@ public static class WinUiTestMouse {
         Check ([Math]::Abs($dpi - $expectedDpi) -le 1) "window DPI $dpi matches device runner $expectedScale%"
     }
     $cx = [int]($bounds.Left + [Math]::Min($bounds.Width / 2.0, 200 * $scale))
-    $cy = [int]($bounds.Top + [Math]::Min($bounds.Height / 2.0, 70 * $scale))
+    $tabStrip = FindById $window 'EditorDocumentTabs'
+    $textTop = $bounds.Top + $scale
+    if ($tabStrip -and -not $tabStrip.Current.IsOffscreen) { $textTop = $tabStrip.Current.BoundingRectangle.Bottom }
+    $cy = [int]($textTop + [Math]::Min(($bounds.Bottom - $textTop) / 2.0, 70 * $scale))
     $gx = [int]($bounds.Left + 25 * $scale)
     $mx = [int]($bounds.Right - 45 * $scale)
 
@@ -199,7 +207,7 @@ public static class WinUiTestMouse {
 
     # Gutter fold marker on the namespace opening line in Assets/Samples/demo.cpp (line 6).
     $foldx = [int]($bounds.Left + 48 * $scale)
-    $foldy = [int]($bounds.Top + (8 + 5*22 + 11) * $scale)
+    $foldy = [int]($textTop + (8 + 5*22 + 11) * $scale)
     Until { $state.Current.Name -match 'Folds=([1-9][0-9]*)' } 'fold candidates built' | Out-Null
     [WinUiTestMouse]::Click($foldx, $foldy)
     Until { $state.Current.Name -match 'Collapsed=1(?:;|$)' } 'gutter fold collapse' | Out-Null
@@ -240,6 +248,7 @@ public static class WinUiTestMouse {
     [System.Windows.Forms.SendKeys]::SendWait('{HOME}')
     Until { $state.Current.Name -match 'Language=html(?:;|$)' } 'HTML asset selected' | Out-Null
     Check ((GetEditorText $editor).Contains('<!DOCTYPE html>')) 'HTML source loaded from Assets'
+    $sampleBox.SetFocus()
     [System.Windows.Forms.SendKeys]::SendWait('{DOWN}')
     Until { $state.Current.Name -match 'Language=javascript(?:;|$)' } 'JavaScript asset selected' | Out-Null
     Check ((GetEditorText $editor).Contains('class Counter')) 'JavaScript source loaded from Assets'
@@ -274,10 +283,12 @@ public static class WinUiTestMouse {
     Check ($selectedWord -eq 'Counter') 'double click selects exactly Counter'
     # Changes to the selection must not edit the underlying model.
     Check ((GetEditorText $editor).Contains('class Counter')) 'double click preserves the source text'
-    [System.Windows.Forms.SendKeys]::SendWait('{DOWN}')
+    $sampleBox.SetFocus()
+    [System.Windows.Forms.SendKeys]::SendWait('{HOME}{DOWN}{DOWN}{ENTER}')
     Until { $state.Current.Name -match 'Language=csharp(?:;|$)' } 'C# asset selected' | Out-Null
     Check ((GetEditorText $editor).Contains('public static class Program')) 'C# source loaded from Assets'
-    [System.Windows.Forms.SendKeys]::SendWait('{END}')
+    $sampleBox.SetFocus()
+    [System.Windows.Forms.SendKeys]::SendWait('{HOME}{DOWN}{DOWN}{DOWN}{ENTER}')
     Until { $state.Current.Name -match 'Language=cpp(?:;|$)' } 'C++ asset selected' | Out-Null
     Check ((GetEditorText $editor).Contains('#include <iostream>')) 'C++ source loaded from Assets'
 

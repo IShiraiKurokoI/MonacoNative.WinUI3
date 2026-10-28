@@ -6,23 +6,6 @@ using Windows.UI;
 
 namespace MonacoNative.Renderer.WinUI3;
 
-public enum MonacoDiffDecorationKind
-{
-    Inserted,
-    Deleted,
-    Modified,
-    Moved,
-}
-
-public readonly record struct MonacoDiffLineDecoration(
-    int StartLineNumber,
-    int EndLineNumberExclusive,
-    MonacoDiffDecorationKind Kind);
-
-public readonly record struct MonacoDiffTextDecoration(
-    MonacoRange Range,
-    MonacoDiffDecorationKind Kind);
-
 public sealed partial class MonacoEditor
 {
     private IReadOnlyList<MonacoDiffLineDecoration> _diffLineDecorations = Array.Empty<MonacoDiffLineDecoration>();
@@ -97,7 +80,7 @@ public sealed partial class MonacoEditor
         {
             var line = _view.GetViewLine(viewLineNumber);
             var y = VerticalPadding + line.VerticalOffset - scrollTop;
-            if (y + _lineHeight < 0 || y > ActualHeight)
+            if (y + _lineHeight < 0 || y > EditorViewportHeight)
                 continue;
 
             if (lineDecorationsByModelLine.TryGetValue(line.ModelLineNumber, out var lineDecorations))

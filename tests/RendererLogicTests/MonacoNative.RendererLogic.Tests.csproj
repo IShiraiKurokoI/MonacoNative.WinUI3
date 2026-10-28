@@ -6,6 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="..\..\src\MonacoNative.Renderer.WinUI3\EditorTabOrder.cs" Link="EditorTabOrder.cs" />
+    <Compile Include="..\..\src\MonacoNative.Renderer.WinUI3\EditorTabClosePolicy.cs" Link="EditorTabClosePolicy.cs" />
     <Compile Include="..\..\src\MonacoNative.Renderer.WinUI3\MinimapLineCache.cs" Link="MinimapLineCache.cs" />
     <Compile Include="..\..\src\MonacoNative.Renderer.WinUI3\MinimapRowCache.cs" Link="MinimapRowCache.cs" />
     <Compile Include="..\..\src\MonacoNative.Renderer.WinUI3\LineRangeIndex.cs" Link="LineRangeIndex.cs" />

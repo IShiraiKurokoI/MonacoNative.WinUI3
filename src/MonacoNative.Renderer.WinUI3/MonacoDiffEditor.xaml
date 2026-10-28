@@ -16,7 +16,7 @@
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
-            <Grid Grid.Row="0" Background="#252526" Padding="8,6" ColumnSpacing="8">
+            <Grid x:Name="DiffToolbar" Grid.Row="0" Background="#252526" Padding="8,6" ColumnSpacing="8">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
@@ -43,15 +43,15 @@
                     <ColumnDefinition Width="36" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-                <local:MonacoEditor x:Name="OriginalEditor" Grid.Column="0" />
+                <local:MonacoEditor x:Name="OriginalEditor" Grid.Column="0" ShowTabs="False" IsMultiTabEnabled="False" />
                 <Border Grid.Column="1" Background="#252526" BorderBrush="#3F3F46" BorderThickness="1,0">
                     <Canvas x:Name="RevertGutter" />
                 </Border>
-                <local:MonacoEditor x:Name="ModifiedEditor" Grid.Column="2" />
+                <local:MonacoEditor x:Name="ModifiedEditor" Grid.Column="2" ShowTabs="False" IsMultiTabEnabled="False" />
             </Grid>
 
             <Grid x:Name="InlineRoot" Grid.Row="1" Visibility="Collapsed">
-                <local:MonacoEditor x:Name="InlineEditor" />
+                <local:MonacoEditor x:Name="InlineEditor" ShowTabs="False" IsMultiTabEnabled="False" />
                 <Canvas x:Name="InlineDeletedOverlay" IsHitTestVisible="False" />
                 <Canvas x:Name="InlineActionOverlay" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
             </Grid>

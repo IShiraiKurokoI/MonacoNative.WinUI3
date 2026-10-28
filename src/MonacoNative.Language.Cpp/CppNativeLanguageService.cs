@@ -13,6 +13,8 @@ public sealed class CppLanguageOptions
     public string? ClangResourceDirectory { get; init; }
     public IReadOnlyList<string> CompilerArguments { get; init; } = new[] { "-xc++", "-std=c++20" };
     public IReadOnlyDictionary<Uri, string> Documents { get; init; } = new Dictionary<Uri, string>();
+    /// <summary>If supplied, overrides Documents. Return copied snapshots of open C/C++ files.</summary>
+    public Func<IReadOnlyList<NativeLanguageDocument>>? DocumentsProvider { get; init; }
     public string? CompilationDatabasePath { get; init; }
     public Func<Uri, IReadOnlyList<string>>? CompilerArgumentsProvider { get; init; }
 }
@@ -35,6 +37,7 @@ public sealed class CppNativeLanguageService : NativeCompilerService, IReference
     protected override string DefaultExtension => ".cpp";
     protected override string? CompilerLibraryPath => _toolchain.Value.LibraryPath;
     protected override IReadOnlyList<NativeLanguageDocument> GetAdditionalDocuments() =>
+        _options.DocumentsProvider?.Invoke().ToArray() ??
         _options.Documents.Select(pair => new NativeLanguageDocument(pair.Key, pair.Value)).ToArray();
     protected override IReadOnlyList<string> GetArguments(Uri uri)
     {

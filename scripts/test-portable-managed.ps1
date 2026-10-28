@@ -5,6 +5,11 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 
+dotnet run --project (Join-Path $root 'tests\DocumentTests\MonacoNative.Document.Tests.csproj') -c $Configuration
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+dotnet run --project (Join-Path $root 'tests\RenameLogicTests\MonacoNative.RenameLogic.Tests.csproj') -c $Configuration
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
 # Portable IME/i18n state tests do not require a live input method.
 dotnet run --project (Join-Path $root 'tests\InputTests\MonacoNative.Input.Tests.csproj') -c $Configuration
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

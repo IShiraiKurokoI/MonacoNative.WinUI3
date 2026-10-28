@@ -180,6 +180,12 @@ sample load, writing `artifacts/ui-tests/window-lifecycle-report.json`. Use
 startup/shutdown stability; it does not measure memory retained by multiple
 editors inside one process.
 
+The document-tab UI automation also checks that closing or moving the final tab
+removes its split group, Close Others and Close to the Right reflect available
+targets, and right-click labels follow the selected UI culture. Portable renderer
+logic tests cover the shared close-target and empty-group policies; input tests
+check tab-menu resources for en-US, zh-CN, ja-JP and ko-KR.
+
 Windows desktop acceptance includes short-line/no-overflow and long-line/real-
 overflow scenarios with word wrap, vertical scrollbars, minimap, DPI and window
 resizing. Portable tests cannot substitute for these visual/interactive checks.

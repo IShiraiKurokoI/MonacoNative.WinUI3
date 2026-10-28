@@ -32,7 +32,27 @@
         </Style>
     </UserControl.Resources>
     <Border x:Name="EditorChrome" BorderBrush="#3F3F46" BorderThickness="1" CornerRadius="8" Background="#1E1E1E">
+        <Grid x:Name="WorkbenchRoot">
+        <Grid x:Name="GroupRoot">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <TabView x:Name="DocumentTabView" Grid.Row="0" Height="35"
+                     Loaded="DocumentTabView_Loaded"
+                     AutomationProperties.AutomationId="EditorDocumentTabs"
+                     TabWidthMode="SizeToContent" CanDragTabs="True" CanReorderTabs="True" AllowDropTabs="True"
+                     SelectionChanged="DocumentTabView_SelectionChanged"
+                     TabCloseRequested="DocumentTabView_TabCloseRequested"
+                     AddTabButtonClick="DocumentTabView_AddTabButtonClick"
+                     TabDragStarting="DocumentTabView_TabDragStarting"
+                     TabDragCompleted="DocumentTabView_TabDragCompleted"
+                     TabStripDragOver="DocumentTabView_TabStripDragOver"
+                     TabStripDrop="DocumentTabView_TabStripDrop" />
+        <Grid x:Name="DocumentContentGrid" Grid.Row="1">
         <Grid x:Name="SurfaceRoot" Background="Transparent"
+              SizeChanged="Editor_SizeChanged"
               PointerEntered="SurfaceRoot_PointerEntered"
               PointerExited="SurfaceRoot_PointerExited"
               PointerPressed="SurfaceRoot_PointerPressed"
@@ -155,6 +175,9 @@
                     </Grid>
                 </Grid>
             </Border>
+        </Grid>
+        </Grid>
+        </Grid>
         </Grid>
     </Border>
 </UserControl>

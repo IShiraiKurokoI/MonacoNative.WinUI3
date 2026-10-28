@@ -58,6 +58,13 @@ try {
                     if ($LASTEXITCODE -ne 0) { throw 'Core CTest failed.' }
                     dotnet run --project (Join-Path $root 'tests/ManagedTests/MonacoNative.Managed.Tests.csproj') -c $Configuration -p:Platform=x64
                     if ($LASTEXITCODE -ne 0) { throw 'Managed native ABI tests failed.' }
+                    $previousNativeLibrary = $env:MONACONATIVE_NATIVE_LIBRARY
+                    try {
+                        $env:MONACONATIVE_NATIVE_LIBRARY = (Resolve-Path (Join-Path $root "build-core/tests/NativeAbiTests/$Configuration/MonacoNative.Core.Native.dll")).Path
+                        dotnet run --project (Join-Path $root 'tests/DocumentModelTests/MonacoNative.DocumentModel.Tests.csproj') -c $Configuration
+                        if ($LASTEXITCODE -ne 0) { throw 'Native document model tests failed.' }
+                    }
+                    finally { $env:MONACONATIVE_NATIVE_LIBRARY = $previousNativeLibrary }
                     & (Join-Path $root 'scripts/run-benchmarks.ps1') -Profile quick -Output 'artifacts/benchmarks/core-quick.json'
                     if ($LASTEXITCODE -ne 0) { throw 'Core quick performance budget failed.' }
                     & (Join-Path $root 'scripts/run-benchmarks.ps1') -Profile full -Output 'artifacts/benchmarks/core-full.json'

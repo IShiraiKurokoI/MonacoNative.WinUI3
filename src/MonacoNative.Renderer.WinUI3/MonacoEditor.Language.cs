@@ -15,8 +15,8 @@ namespace MonacoNative.Renderer.WinUI3;
 public sealed partial class MonacoEditor
 {
     private readonly MonacoLanguageService _languages;
-    private readonly MonacoLanguageDocument _languageDocument;
-    private readonly IncrementalTokenizationCache _languageTokens;
+    private MonacoLanguageDocument _languageDocument;
+    private IncrementalTokenizationCache _languageTokens;
     private readonly List<ulong> _languageInlayHintIds = new();
     private IReadOnlyList<LanguageDiagnostic> _languageDiagnostics = Array.Empty<LanguageDiagnostic>();
     private LineRangeIndex<LanguageDiagnostic> _languageDiagnosticIndex = LineRangeIndex<LanguageDiagnostic>.Empty;
@@ -101,15 +101,18 @@ public sealed partial class MonacoEditor
         _languages.Packages.Install(new JsonLanguagePackage());
         _languages.Packages.Install(new HtmlLanguagePackage());
         _languages.Packages.Install(new CssLanguagePackage());
-        _languages.Packages.Install(new TypeScriptLanguagePackage());
-        _languages.Packages.Install(new CSharpLanguagePackage());
-        _languages.Packages.Install(new CppLanguagePackage());
+        _languages.Packages.Install(new TypeScriptLanguagePackage
+        { Options = new TypeScriptLanguageOptions { DocumentsProvider = GetTypeScriptWorkspaceDocuments } });
+        _languages.Packages.Install(new CSharpLanguagePackage
+        { Options = new CSharpLanguageOptions { DocumentsProvider = () => Volatile.Read(ref _csharpDocumentSnapshots) } });
+        _languages.Packages.Install(new CppLanguagePackage
+        { Options = new CppLanguageOptions { DocumentsProvider = () => Volatile.Read(ref _cppDocumentSnapshots) } });
     }
 
     /// <summary>Monaco-style language registry and provider surface.</summary>
     public MonacoLanguageService Languages => _languages;
 
-    /// <summary>URI used by language selectors. Defaults to inmemory://model/1.</summary>
+    /// <summary>URI used by language selectors; each document starts with its own provider URI.</summary>
     public Uri DocumentUri
     {
         get => _languageDocument.Uri;
@@ -117,6 +120,12 @@ public sealed partial class MonacoEditor
         {
             ArgumentNullException.ThrowIfNull(value);
             if (_languageDocument.Uri == value) return;
+            if (!value.IsAbsoluteUri) throw new ArgumentException("Document URIs must be absolute.", nameof(value));
+            if (TryGetOpenDocument(value) is { } existing && existing != _activeDocument)
+                throw new InvalidOperationException("That URI is already open in another tab.");
+            if (_activeDocument is { Provider: not MonacoNative.Documents.MemoryDocumentProvider })
+                throw new InvalidOperationException("Use SaveDocumentAsAsync to change a provider-backed document's URI.");
+            CancelRenameSession();
             CancelNativeDiagnostics();
             CancelAutomaticSuggestions();
             HideSuggestWidget();
@@ -126,6 +135,15 @@ public sealed partial class MonacoEditor
             DetachLspBindingForDocumentChange();
             _languages.ClearDiagnostics(_languageDocument.Uri);
             _languageDocument.Uri = value;
+            if (_activeDocument is { } activeDocument)
+            {
+                activeDocument.SetProvider(new MonacoNative.Documents.MemoryDocumentProvider(
+                    activeDocument.Provider is MonacoNative.Documents.MemoryDocumentProvider memory ? memory.Text : _model.Text,
+                    activeDocument.DisplayName, _model.LanguageId, value));
+                activeDocument.SetReadOnly(_hostIsReadOnly);
+                activeDocument.WorkspaceText = _model.Text;
+                UpdateWorkspaceSnapshots();
+            }
             ClearSemanticTokens();
             ClearLanguageInlayHints();
             ScheduleFoldingRefresh();
@@ -152,7 +170,9 @@ public sealed partial class MonacoEditor
 
     public async Task GoToDefinitionAsync(CancellationToken cancellationToken = default)
     {
-        var locations = await ProvideDefinitionAsync(cancellationToken: cancellationToken);
+        var request = CaptureEditorRequest();
+        var locations = await _languages.ProvideDefinitionAsync(request.Snapshot, request.Position, cancellationToken);
+        if (cancellationToken.IsCancellationRequested || !IsEditorRequestCurrent(request, checkSelection: true)) return;
         var first = locations.FirstOrDefault();
         if (first is not null) NavigateToLocation(first);
     }
@@ -242,20 +262,22 @@ public sealed partial class MonacoEditor
     public async ValueTask ApplyCodeActionAsync(CodeAction action, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(action);
+        var request = CaptureEditorRequestIdentity();
         if (!string.IsNullOrWhiteSpace(action.DisabledReason))
             throw new InvalidOperationException(action.DisabledReason);
 
         if (action.Edits is { Count: > 0 })
         {
-            using var transaction = _model.BeginUndoTransaction();
+            var sourceModel = request.Model;
+            using var transaction = sourceModel.BeginUndoTransaction();
             try
             {
                 var edits = action.Edits
                     .Select(edit =>
                     {
                         var range = edit.Range.Normalize();
-                        var startOffset = _model.GetOffsetAt(new MonacoPosition(range.StartLineNumber, range.StartColumn));
-                        var endOffset = _model.GetOffsetAt(new MonacoPosition(range.EndLineNumber, range.EndColumn));
+                        var startOffset = sourceModel.GetOffsetAt(new MonacoPosition(range.StartLineNumber, range.StartColumn));
+                        var endOffset = sourceModel.GetOffsetAt(new MonacoPosition(range.EndLineNumber, range.EndColumn));
                         return (Start: startOffset, End: endOffset, Text: edit.Text ?? string.Empty);
                     })
                     .OrderByDescending(edit => edit.Start)
@@ -264,7 +286,7 @@ public sealed partial class MonacoEditor
                 foreach (var edit in edits)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    _model.Replace(edit.Start, edit.End, edit.Text);
+                    sourceModel.Replace(edit.Start, edit.End, edit.Text);
                 }
                 transaction.Complete();
             }
@@ -276,9 +298,12 @@ public sealed partial class MonacoEditor
         }
         if (action.WorkspaceEdit is not null)
             await ApplyWorkspaceEditAsync(action.WorkspaceEdit, cancellationToken).ConfigureAwait(true);
+        // Workspace handlers may await host I/O, and commands may navigate to another tab.
+        // Edits above intentionally change the source version; document activation must not change.
+        if (cancellationToken.IsCancellationRequested || !IsEditorRequestCurrent(request, checkVersion: false)) return;
         if (action.Command is not null)
             await action.Command(cancellationToken).ConfigureAwait(true);
-        AfterProjectionChanged(true);
+        if (IsEditorRequestCurrent(request, checkVersion: false)) AfterProjectionChanged(true);
     }
 
     private void ClearLanguageInlayHintsCore()

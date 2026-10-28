@@ -3,6 +3,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 if command -v dotnet >/dev/null 2>&1; then
+  dotnet run --project "$ROOT/tests/DocumentTests/MonacoNative.Document.Tests.csproj" -c Release
+  dotnet run --project "$ROOT/tests/RenameLogicTests/MonacoNative.RenameLogic.Tests.csproj" -c Release
   dotnet run --project "$ROOT/tests/InputTests/MonacoNative.Input.Tests.csproj" -c Release
   dotnet run --project "$ROOT/tests/AccessibilityTests/MonacoNative.Accessibility.Tests.csproj" -c Release
   dotnet run --project "$ROOT/tests/LanguageTests/MonacoNative.Language.Tests.csproj" -c Release
@@ -19,6 +21,11 @@ cmake -S "$ROOT" -B "$ROOT/build-release" -G Ninja \
   -DMONACONATIVE_WARNINGS_AS_ERRORS=ON
 cmake --build "$ROOT/build-release" --parallel
 ctest --test-dir "$ROOT/build-release" --output-on-failure --output-junit "$ROOT/build-release/ctest-results.xml"
+
+if command -v dotnet >/dev/null 2>&1; then
+  MONACONATIVE_NATIVE_LIBRARY="$ROOT/build-release/src/MonacoNative.Core.Native/libMonacoNative.Core.Native.so" \
+    dotnet run --project "$ROOT/tests/DocumentModelTests/MonacoNative.DocumentModel.Tests.csproj" -c Release
+fi
 
 if command -v clang++ >/dev/null 2>&1; then
   rm -rf "$ROOT/build-sanitize"

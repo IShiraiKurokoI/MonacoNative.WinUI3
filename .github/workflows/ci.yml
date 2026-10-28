@@ -23,6 +23,8 @@ jobs:
         run: ctest --test-dir build --output-on-failure -L '^core$' --output-junit "$PWD/build/ctest-core.xml"
       - name: Test native C ABI and lifetime contracts
         run: ctest --test-dir build --output-on-failure -L '^abi$' --output-junit "$PWD/build/ctest-abi.xml"
+      - name: Test independent document models and workspace edits
+        run: MONACONATIVE_NATIVE_LIBRARY="$PWD/build/src/MonacoNative.Core.Native/libMonacoNative.Core.Native.so" dotnet run --project tests/DocumentModelTests/MonacoNative.DocumentModel.Tests.csproj -c Release
       - name: Test native input backends
         run: ctest --test-dir build --output-on-failure -L '^input$' --output-junit "$PWD/build/ctest-input.xml"
       - name: Test native TypeScript scanner and declaration fixtures
@@ -37,6 +39,10 @@ jobs:
         run: dotnet run --project tests/LspTests/MonacoNative.Lsp.Tests.csproj -c Release
       - name: Test renderer cache and incremental invalidation
         run: dotnet run --project tests/RendererLogicTests/MonacoNative.RendererLogic.Tests.csproj -c Release
+      - name: Test file and memory document providers
+        run: dotnet run --project tests/DocumentTests/MonacoNative.Document.Tests.csproj -c Release
+      - name: Test inline rename input policy
+        run: dotnet run --project tests/RenameLogicTests/MonacoNative.RenameLogic.Tests.csproj -c Release
       - name: Measure native core quick performance budgets
         run: bash ./scripts/run-benchmarks.sh quick
       - name: Measure native core full performance budgets

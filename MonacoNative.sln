@@ -42,12 +42,30 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MonacoNative.Language.CShar
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MonacoNative.Language.Cpp", "src\MonacoNative.Language.Cpp\MonacoNative.Language.Cpp.csproj", "{BFAC565E-5A24-582E-B1B9-3D312F9176E0}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MonacoNative.Document.Tests", "tests\DocumentTests\MonacoNative.Document.Tests.csproj", "{165A8EC1-FFCF-5267-9246-5D34038B00F3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MonacoNative.RenameLogic.Tests", "tests\RenameLogicTests\MonacoNative.RenameLogic.Tests.csproj", "{5F2F0A10-DE6D-5C58-A24F-22EED7E9E6B8}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MonacoNative.DocumentModel.Tests", "tests\DocumentModelTests\MonacoNative.DocumentModel.Tests.csproj", "{A4784736-67C5-53B9-B3E1-BE43A063EA43}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
 		Release|x64 = Release|x64
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{165A8EC1-FFCF-5267-9246-5D34038B00F3}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{165A8EC1-FFCF-5267-9246-5D34038B00F3}.Debug|x64.Build.0 = Debug|Any CPU
+		{165A8EC1-FFCF-5267-9246-5D34038B00F3}.Release|x64.ActiveCfg = Release|Any CPU
+		{165A8EC1-FFCF-5267-9246-5D34038B00F3}.Release|x64.Build.0 = Release|Any CPU
+		{5F2F0A10-DE6D-5C58-A24F-22EED7E9E6B8}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{5F2F0A10-DE6D-5C58-A24F-22EED7E9E6B8}.Debug|x64.Build.0 = Debug|Any CPU
+		{5F2F0A10-DE6D-5C58-A24F-22EED7E9E6B8}.Release|x64.ActiveCfg = Release|Any CPU
+		{5F2F0A10-DE6D-5C58-A24F-22EED7E9E6B8}.Release|x64.Build.0 = Release|Any CPU
+		{A4784736-67C5-53B9-B3E1-BE43A063EA43}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{A4784736-67C5-53B9-B3E1-BE43A063EA43}.Debug|x64.Build.0 = Debug|Any CPU
+		{A4784736-67C5-53B9-B3E1-BE43A063EA43}.Release|x64.ActiveCfg = Release|Any CPU
+		{A4784736-67C5-53B9-B3E1-BE43A063EA43}.Release|x64.Build.0 = Release|Any CPU
 		{9A07E135-3C00-57B2-9DB4-5F78F17D4286}.Debug|x64.ActiveCfg = Debug|Any CPU
 		{9A07E135-3C00-57B2-9DB4-5F78F17D4286}.Debug|x64.Build.0 = Debug|Any CPU
 		{9A07E135-3C00-57B2-9DB4-5F78F17D4286}.Release|x64.ActiveCfg = Release|Any CPU

@@ -1,6 +1,7 @@
 using MonacoNative.Renderer.WinUI3;
 
 internal readonly record struct TestInterval(int Id, int Start, int End);
+internal sealed record TestTab(string Name, bool IsPinned, bool IsDirty);
 
 internal static class Program
 {
@@ -36,6 +37,46 @@ internal static class Program
             Equal("Backspace", EditorShortcutLabelFormatter.Format("Back"));
             Equal(string.Empty, EditorShortcutLabelFormatter.Format(null));
             Equal(string.Empty, EditorShortcutLabelFormatter.Format("   "));
+        });
+
+        Run("tab close targets and context-menu availability share one policy", () =>
+        {
+            var first = new TestTab("first", IsPinned: false, IsDirty: false);
+            var second = new TestTab("second", IsPinned: false, IsDirty: true);
+            var pinned = new TestTab("pinned", IsPinned: true, IsDirty: false);
+            var documents = new[] { first, second, pinned };
+            var selection = new[] { first };
+            Func<TestTab, bool> isPinned = tab => tab.IsPinned;
+            Func<TestTab, bool> isDirty = tab => tab.IsDirty;
+
+            True(EditorTabClosePolicy.CanCloseOthers(documents, first, selection, isPinned, isDirty),
+                "Close Others is enabled only when an unpinned non-selected target exists");
+            True(EditorTabClosePolicy.GetTargets(EditorTabCloseScope.Others, documents, first, selection,
+                isPinned, isDirty).SequenceEqual(new[] { second }), "Close Others keeps pinned and selected tabs");
+            True(EditorTabClosePolicy.CanCloseToRight(documents, first, 1, isPinned, isDirty),
+                "Close to the Right is enabled when a closeable right-hand tab exists");
+            True(EditorTabClosePolicy.GetTargets(EditorTabCloseScope.ToRight, documents, first, selection,
+                isPinned, isDirty).SequenceEqual(new[] { second }), "Close to the Right skips pinned tabs");
+            True(!EditorTabClosePolicy.CanCloseToRight(documents, first, 2, isPinned, isDirty),
+                "Close to the Right is disabled for multi-selection");
+            True(!EditorTabClosePolicy.CanCloseOthers(new[] { first, pinned }, first, selection, isPinned, isDirty),
+                "Close Others is disabled when all remaining tabs are pinned");
+            True(!EditorTabClosePolicy.CanCloseToRight(new[] { first, pinned }, first, 1, isPinned, isDirty),
+                "Close to the Right is disabled when only pinned tabs remain to the right");
+        });
+
+        Run("empty editor groups are removed without disposing the root or real documents", () =>
+        {
+            True(EditorGroupLifecyclePolicy.ShouldRemoveEmptyGroup(false, Array.Empty<(bool, bool)>()),
+                "A child group with no tabs is removable");
+            True(EditorGroupLifecyclePolicy.ShouldRemoveEmptyGroup(false, new[] { (IsImplicit: true, IsDirty: false) }),
+                "A clean implicit placeholder represents an empty child group");
+            True(!EditorGroupLifecyclePolicy.ShouldRemoveEmptyGroup(true, new[] { (IsImplicit: true, IsDirty: false) }),
+                "The root group remains available when empty");
+            True(!EditorGroupLifecyclePolicy.ShouldRemoveEmptyGroup(false, new[] { (IsImplicit: false, IsDirty: false) }),
+                "A child group with a real document remains open");
+            True(!EditorGroupLifecyclePolicy.ShouldRemoveEmptyGroup(false, new[] { (IsImplicit: true, IsDirty: true) }),
+                "A dirty placeholder is not discarded as an empty group");
         });
 
         Run("editor horizontal extent respects the actual viewport", () =>

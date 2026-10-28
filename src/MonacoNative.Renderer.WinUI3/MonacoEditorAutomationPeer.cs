@@ -13,7 +13,6 @@ namespace MonacoNative.Renderer.WinUI3;
 internal sealed class MonacoEditorAutomationPeer : FrameworkElementAutomationPeer, ITextProvider2, ITextEditProvider
 {
     private readonly MonacoEditor _editor;
-    private readonly object _documentToken = new();
 
     public MonacoEditorAutomationPeer(MonacoEditor owner) : base(owner) => _editor = owner;
 
@@ -70,8 +69,19 @@ internal sealed class MonacoEditorAutomationPeer : FrameworkElementAutomationPee
         return range.HasValue ? CreateRange(range.Value.Start, range.Value.End) : null!;
     }
 
-    internal MonacoTextRangeProvider CreateRange(int start, int end) =>
-        new(this, _editor, new AccessibleTextRange(() => _editor.AccessibilityText, _documentToken, start, end));
+    internal MonacoTextRangeProvider CreateRange(int start, int end)
+    {
+        // A UIA client may retain a range across a tab switch. Never reinterpret its
+        // offsets as a selection in the newly active document.
+        var model = _editor.Model;
+        string ReadDocument()
+        {
+            if (_editor.IsDisposed || !ReferenceEquals(_editor.Model, model))
+                throw new InvalidOperationException("The text range belongs to a document that is no longer active.");
+            return model.Text;
+        }
+        return new(this, _editor, new AccessibleTextRange(ReadDocument, model, start, end));
+    }
 
     internal IRawElementProviderSimple RawProvider => ProviderFromPeer(this);
 

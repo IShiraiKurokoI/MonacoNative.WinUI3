@@ -212,7 +212,7 @@ internal sealed unsafe class NativeTsfInputController : IEditorTextInputControll
     private static int SetSelectionCallback(nint context, int start, int end, int activeEndAtStart)
     {
         var self = FromContext(context);
-        if (self is null)
+        if (self is null || self._disposed || !self._hasFocus)
             return 0;
         try
         {

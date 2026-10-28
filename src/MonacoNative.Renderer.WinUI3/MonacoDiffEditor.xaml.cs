@@ -38,6 +38,19 @@ public sealed partial class MonacoDiffEditor : UserControl, IDisposable
     {
         InitializeComponent();
 
+        // A diff owns its three source buffers. Workspace lifecycle shortcuts must
+        // not replace one of those buffers with a standalone untitled document.
+        foreach (var editor in new[] { OriginalEditor, ModifiedEditor, InlineEditor })
+        foreach (var command in new[]
+        {
+            "workbench.action.files.newUntitledFile", "workbench.action.files.save",
+            "workbench.action.closeActiveEditor", "workbench.action.nextEditor", "workbench.action.previousEditor",
+            "workbench.action.reopenClosedEditor", "workbench.action.files.saveAs", "workbench.action.closeEditorsInGroup",
+            "workbench.action.closeUnmodifiedEditors", "workbench.action.keepEditor", "workbench.action.splitEditor",
+        })
+            editor.ContextMenuItemOptions.Add(new EditorContextMenuItemOptions
+            { CommandId = command, Mode = EditorCommandAvailability.Disabled });
+
         OriginalEditor.IsReadOnly = true;
         OriginalEditor.WordWrap = false;
         ModifiedEditor.WordWrap = false;
@@ -58,6 +71,23 @@ public sealed partial class MonacoDiffEditor : UserControl, IDisposable
 
         ApplyLocalization();
         ApplyViewMode();
+    }
+
+    internal void ConfigureRefactorPreview()
+    {
+        DiffRoot.BorderThickness = new Thickness(0);
+        DiffRoot.CornerRadius = new CornerRadius(0);
+        DiffToolbar.Visibility = Visibility.Collapsed;
+        SideBySideRoot.ColumnDefinitions[1].Width = new GridLength(1);
+        RevertGutter.Visibility = Visibility.Collapsed;
+        InlineActionOverlay.Visibility = Visibility.Collapsed;
+        foreach (var editor in new[] { OriginalEditor, ModifiedEditor, InlineEditor })
+        {
+            editor.IsReadOnly = true;
+            editor.ShowOverviewRuler = false;
+            editor.SetEmbeddedPreviewChrome();
+        }
+        IgnoreTrimWhitespace = false;
     }
 
     public event EventHandler? DiffUpdated;

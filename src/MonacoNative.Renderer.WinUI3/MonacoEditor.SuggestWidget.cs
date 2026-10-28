@@ -142,28 +142,28 @@ public sealed partial class MonacoEditor
     private void PositionSuggestWidget()
     {
         if (!IsSuggestWidgetVisible || _suggestPopup is null) return;
-        if (ActualWidth < 120 || ActualHeight < 70) { HideSuggestWidget(); return; }
+        if (EditorViewportWidth < 120 || EditorViewportHeight < 70) { HideSuggestWidget(); return; }
 
         var point = GetViewportPoint(_suggestAnchor, belowLine: true);
         // When the anchor scrolls outside the viewport, never leave a floating
         // completion list detached from the cursor.
-        if (point.Y < -_lineHeight || point.Y > ActualHeight + _lineHeight)
+        if (point.Y < -_lineHeight || point.Y > EditorViewportHeight + _lineHeight)
         {
             HideSuggestWidget();
             return;
         }
 
-        var width = Math.Min(440, Math.Max(100, ActualWidth - 12));
-        var height = Math.Min(SuggestMaxHeight, Math.Min(_suggestSelection.Count * SuggestRowHeight + 6, ActualHeight - 12));
+        var width = Math.Min(440, Math.Max(100, EditorViewportWidth - 12));
+        var height = Math.Min(SuggestMaxHeight, Math.Min(_suggestSelection.Count * SuggestRowHeight + 6, EditorViewportHeight - 12));
         _suggestPopup.Width = width;
         _suggestPopup.Height = height;
-        var x = Math.Clamp(point.X, 4, Math.Max(4, ActualWidth - width - 4));
+        var x = Math.Clamp(point.X, 4, Math.Max(4, EditorViewportWidth - width - 4));
         var y = point.Y;
         var above = point.Y - _lineHeight - height;
-        if (y + height > ActualHeight - 4 && above >= 4)
+        if (y + height > EditorViewportHeight - 4 && above >= 4)
             y = above;
         else
-            y = Math.Clamp(y, 4, Math.Max(4, ActualHeight - height - 4));
+            y = Math.Clamp(y, 4, Math.Max(4, EditorViewportHeight - height - 4));
         Canvas.SetLeft(_suggestPopup, x);
         Canvas.SetTop(_suggestPopup, y);
     }

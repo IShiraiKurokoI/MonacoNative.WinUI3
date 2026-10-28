@@ -99,7 +99,55 @@ for handler, end in [('Editor_KeyDown', 'Editor_KeyUp'),
                      ('Editor_CharacterReceived', 'IsKeyDown')]:
     piece = source[source.index('private ' + ('async void ' if handler == 'Editor_KeyDown' else 'void ') + handler):]
     piece = piece[:piece.index('private ', 20)]
-    assert 'IsFindOpen && IsChildOf(e.OriginalSource as DependencyObject, FindWidget)' in piece, handler
+    assert 'e.Handled || !ShouldRouteEditorInput(e.OriginalSource as DependencyObject)' in piece, handler
+    guard = piece.index('ShouldRouteEditorInput(')
+    consumer = 'TryHandleKeyDown(' if handler == 'Editor_KeyDown' else 'TryHandleKeyUp(' if handler == 'Editor_KeyUp' else 'ReplaceSelection('
+    assert guard < piece.index(consumer), f'{handler}: child-widget guard must run before document input'
+rename = (renderer / 'MonacoEditor.Rename.cs').read_text(encoding='utf-8')
+assert 'ReferenceEquals(FocusManager.GetFocusedElement(XamlRoot), this)' in rename
+assert '!IsChildOf(source, FindWidget) && !IsChildOf(source, ContributionLayer)' in rename
+# A docked preview may remain open while a source tab is edited. Only the actual
+# focus owner and the visible transient editor determine where input is routed.
+assert 'IsEditorTextFocused && !IsRenameOpen && !_showingEmptyGroup' in rename
+assert '_transientEditorHost?.Visibility != Visibility.Visible' in rename
+got_focus = source[source.index('private void Editor_GotFocus'):source.index('private void Editor_LostFocus')]
+assert got_focus.index('if (!IsEditorTextFocused)') < got_focus.index('NotifyFocusEnter()')
+assert 'LeaveEditorTextInput();' in got_focus
+assert rename.index('LeaveEditorTextInput();') < rename.index('_renameInput.Focus(FocusState.Programmatic)')
+assert '_renameInputComposing || e.Handled' in rename and 'TextCompositionStarted' in rename
+assert 'ReferenceEquals(_model, _renameModel)' in rename and 'AreRenameWorkspaceVersionsCurrent' in rename
+assert 'await ShowRenamePreviewAsync(edit, newName, request, token)' in rename
+assert 'await ApplyWorkspaceEditAsync(edit, token)' in rename
+preview = (renderer / 'MonacoEditor.RefactorPreview.cs').read_text(encoding='utf-8')
+tabs = (renderer / 'MonacoEditor.Tabs.cs').read_text(encoding='utf-8')
+documents = (renderer / 'MonacoEditor.Documents.cs').read_text(encoding='utf-8')
+close_policy = (renderer / 'EditorTabClosePolicy.cs').read_text(encoding='utf-8')
+ui_automation_tabs = (root / 'tests/UiAutomationTests/Run-DocumentTabs.ps1').read_text(encoding='utf-8')
+assert 'owner.WorkbenchRoot' in preview and 'root.Children.Add(_renamePreview)' in preview
+assert 'ContributionLayer.Children.Add(_renamePreview)' not in preview
+assert 'new MonacoDiffEditor' in preview and 'diff.ConfigureRefactorPreview()' in preview
+assert 'new TreeView' in preview and 'RefreshRefactorChecks' in preview
+assert 'current.Text != view.File.OriginalText' in preview, 'Reject stale refactor snapshots'
+assert 'BuildModifiedText()' in preview
+assert 'Model.Replace' not in preview, 'Preview selection must not mutate source documents'
+assert 'EditorTabOrder.MoveBlock' in tabs and '_documentItems.Move' in tabs
+for manifest_path in (
+    root / 'src/MonacoNative.SampleApp/app.manifest',
+    root / 'examples/NuGetWinUI3/app.manifest',
+    root / 'tests/PackageConsumerSmoke/WinUIConsumer/app.manifest',
+):
+    app_manifest = manifest_path.read_text(encoding='utf-8')
+    assert '<dpiAware xmlns="http://schemas.microsoft.com/SMI/2005/WindowsSettings">true/pm</dpiAware>' in app_manifest
+    assert '<dpiAwareness xmlns="http://schemas.microsoft.com/SMI/2016/WindowsSettings">PerMonitorV2, PerMonitor</dpiAwareness>' in app_manifest
+assert 'EditorTabClosePolicy.GetTargets' in tabs and 'EditorTabCloseScope.Selected' in close_policy
+assert 'EditorTabCloseScope.Others' in close_policy and '!isPinned(document)' in close_policy
+assert 'ConfirmDocumentSetAsync' in documents, 'Bulk close must preflight all dirty buffers'
+assert 'document.SaveGate.WaitAsync' in documents, 'Split views must serialize saves'
+assert 'LanguageModelSnapshot.Capture(_languageDocument)' in rename
+assert '_renameApplyingSequence == _renameSequence && _applyingWorkspaceEdits' in rename
+assert 'if (_renameInput.Text == initial)' in rename, 'A deferred focus retry must not reselect newly typed text'
+menu_execute = source[source.index('private async Task ExecuteContextMenuCommandAsync'):source.index('private ', source.index('private async Task ExecuteContextMenuCommandAsync') + 20)]
+assert '!IsRenameOpen && !IsRenamePreviewOpen' in menu_execute, 'Menu completion must preserve rename input focus'
 assert language.count('=> _lastHighContrast == true') == 3
 assert '=> _lastHighContrast\n' not in language
 unqualified = re.search(r'(?<!Microsoft\.UI\.Dispatching\.)\bDispatcherQueuePriority\.', source)
@@ -253,3 +301,26 @@ assert 'new Grid { ColumnSpacing = 6' in contributions and 'of {help.Signatures.
 assert 'new CppClangFormatProvider(' in cpp_package and 'BasicSourceFormattingProvider' not in cpp_package
 assert '--assume-filename=' in cpp_formatter and '--lines=' in cpp_formatter and 'RedirectStandardInput = true' in cpp_formatter
 print('PASS: profile overrides, overload alignment, shutdown guards, and LLVM formatter wiring')
+
+# Native tab context menus use the localization service and a shared close-target policy.
+tabs = (renderer / 'MonacoEditor.Tabs.cs').read_text(encoding='utf-8')
+groups = (renderer / 'MonacoEditor.Groups.cs').read_text(encoding='utf-8')
+documents = (renderer / 'MonacoEditor.Documents.cs').read_text(encoding='utf-8')
+assert 'EditorTabClosePolicy.CanCloseOthers' in tabs and 'EditorTabClosePolicy.CanCloseToRight' in tabs
+assert 'EditorTabClosePolicy.GetTargets(scope' in tabs
+assert 'AutomationProperties.SetAutomationId(split, "workbench.action.splitAndMove")' in tabs
+assert 'Local("monacoNative.tabs.closeOthers")' in tabs and 'Local("monacoNative.tabs.closeToRight")' in tabs
+assert 'GroupOwner.RemoveEmptyEditorGroup(this);' in documents
+assert 'finally { GroupOwner.RemoveEmptyEditorGroup(target); }' in groups
+assert 'finally { GroupOwner.RemoveEmptyEditorGroup(group); }' in groups
+assert 'EditorGroupLifecyclePolicy.ShouldRemoveEmptyGroup' in groups
+assert 'selectionCount == 1' in close_policy and '!isPinned(document)' in close_policy
+assert 'owner._localization.SetCulture(value)' in source and 'group._localization.SetCulture(culture)' in source
+assert "existing split groups follow UI language changes" in ui_automation_tabs
+assert "moving the final tab out closes its split group" in ui_automation_tabs
+for locale in ('en-US', 'zh-CN', 'ja-JP', 'ko-KR'):
+    resources = (root / f'src/MonacoNative.EditorServices/I18n/Locales/{locale}.json').read_text(encoding='utf-8')
+    assert '"monacoNative.tabs.closeOthers"' in resources, f'{locale} is missing tab context-menu translations'
+    assert '"monacoNative.tabs.splitAndMove"' in resources, f'{locale} is missing split submenu translation'
+assert 'Split Right' not in tabs and 'Close Others' not in tabs, 'Tab context-menu labels must not be hard-coded in the renderer'
+print('PASS: native tab close policy, empty-group cleanup and context-menu localization guards')

@@ -196,6 +196,46 @@
       "key": "monacoNative.diff.accessibility.inline",
       "source": "Inline diff view",
       "kind": "accessibility"
+    },
+    {
+      "key": "monacoNative.rename.hint",
+      "source": "Enter to Rename, Ctrl+Enter to Preview",
+      "kind": "editor-contribution"
+    },
+    {
+      "key": "monacoNative.rename.inputLabel",
+      "source": "Rename input. Type new name and press Enter to commit.",
+      "kind": "editor-contribution"
+    },
+    {
+      "key": "monacoNative.rename.noEdits",
+      "source": "No rename edits are available at this position.",
+      "kind": "editor-contribution"
+    },
+    {
+      "key": "monacoNative.rename.documentChanged",
+      "source": "A document changed while renaming. Run Rename Symbol again.",
+      "kind": "editor-contribution"
+    },
+    {
+      "key": "monacoNative.rename.previewTitle",
+      "source": "REFACTOR PREVIEW",
+      "kind": "editor-contribution"
+    },
+    {
+      "key": "monacoNative.rename.previewSummary",
+      "source": "Renaming '{0}' to '{1}' · {2} changes",
+      "kind": "editor-contribution"
+    },
+    {
+      "key": "monacoNative.rename.apply",
+      "source": "Apply",
+      "kind": "editor-contribution"
+    },
+    {
+      "key": "monacoNative.rename.discard",
+      "source": "Discard",
+      "kind": "editor-contribution"
     }
   ]
 }

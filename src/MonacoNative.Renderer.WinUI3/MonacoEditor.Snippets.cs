@@ -114,15 +114,15 @@ public sealed partial class MonacoEditor
     {
         if (!IsSnippetChoiceVisible || _snippetChoicePopup is null || _snippetSession?.Current is not { } stop) return;
         var point = GetViewportPoint(_model.GetPositionAt((nuint)stop.Start), belowLine: true);
-        if (point.Y < -_lineHeight || point.Y > ActualHeight + _lineHeight)
+        if (point.Y < -_lineHeight || point.Y > EditorViewportHeight + _lineHeight)
         { HideSnippetChoicePopup(); return; }
-        var width = Math.Min(340, Math.Max(120, ActualWidth - 12));
+        var width = Math.Min(340, Math.Max(120, EditorViewportWidth - 12));
         var height = Math.Min(244, stop.Choices.Count * 26 + 6);
         _snippetChoicePopup.Width = width;
-        Canvas.SetLeft(_snippetChoicePopup, Math.Clamp(point.X, 4, Math.Max(4, ActualWidth - width - 4)));
+        Canvas.SetLeft(_snippetChoicePopup, Math.Clamp(point.X, 4, Math.Max(4, EditorViewportWidth - width - 4)));
         var above = point.Y - _lineHeight - height;
-        var y = point.Y + height > ActualHeight - 4 && above >= 4 ? above : point.Y;
-        Canvas.SetTop(_snippetChoicePopup, Math.Clamp(y, 4, Math.Max(4, ActualHeight - height - 4)));
+        var y = point.Y + height > EditorViewportHeight - 4 && above >= 4 ? above : point.Y;
+        Canvas.SetTop(_snippetChoicePopup, Math.Clamp(y, 4, Math.Max(4, EditorViewportHeight - height - 4)));
     }
 
     private void CommitSnippetChoice(bool advance)
