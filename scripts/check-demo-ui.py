@@ -20,17 +20,17 @@ assert find(editor.getroot(), 'FindInSelection').attrib['Grid.Column'] == '5'
 assert find(editor.getroot(), 'ReplaceRow').attrib['Grid.Row'] == '1'
 assert len([n for n in find(editor.getroot(), 'ReplaceRow').iter()
             if n.attrib.get(xns+'Name') == 'ReplaceTextBox']) == 1
-source = (renderer / 'MonacoEditor.xaml.cs').read_text()
+source = (renderer / 'MonacoEditor.xaml.cs').read_text(encoding="utf-8")
 assert 'UpdateFindWidgetPlacement' in source and 'MinimapWidth' in source
 assert 'SetContextMenuToggleVisibility' in source
-assert 'EditorCommandAvailability.ShortcutOnly' in (renderer / 'EditorCommandAvailability.cs').read_text()
-assert 'IsBasic(commandId)' in (renderer / 'EditorCommandAvailability.cs').read_text()
-assert 'IsBasic(commandId) || toggle' not in (renderer / 'EditorCommandAvailability.cs').read_text()
-assert 'FindReplaceChevron.Glyph' in (renderer / 'MonacoEditor.Contributions.cs').read_text()
-source_sample = (app_dir / 'MainWindow.xaml.cs').read_text()
+assert 'EditorCommandAvailability.ShortcutOnly' in (renderer / 'EditorCommandAvailability.cs').read_text(encoding="utf-8")
+assert 'IsBasic(commandId)' in (renderer / 'EditorCommandAvailability.cs').read_text(encoding="utf-8")
+assert 'IsBasic(commandId) || toggle' not in (renderer / 'EditorCommandAvailability.cs').read_text(encoding="utf-8")
+assert 'FindReplaceChevron.Glyph' in (renderer / 'MonacoEditor.Contributions.cs').read_text(encoding="utf-8")
+source_sample = (app_dir / 'MainWindow.xaml.cs').read_text(encoding="utf-8")
 assert 'RegisterDocumentFormattingEditProvider' not in source_sample, 'sample must use language-package formatters'
 assert 'await Editor.FormatDocumentAsync()' in source_sample
-csproj = (app_dir / 'MonacoNative.SampleApp.csproj').read_text()
+csproj = (app_dir / 'MonacoNative.SampleApp.csproj').read_text(encoding="utf-8")
 assert '<Compile Remove="Assets\\Samples\\**\\*.cs"' not in csproj, 'C# sample must be project-backed for Roslyn semantic completion'
 assert 'ResolveSamplePath' in source_sample
 assert 'ConnectLanguagePackageServerAsync' not in source_sample
@@ -47,7 +47,7 @@ assert 'RefreshShortcutSchemeOptions();' in source_sample
 assert 'Editor.ShortcutScheme = option.Value' in source_sample
 assert 'var selectedScheme = Editor.ShortcutScheme' in source_sample
 assert 'Editor.TryGetLanguageStatus(out var language)' in source_sample
-assert 'public bool TryGetLanguageStatus(out EditorLanguageStatus status)' in (renderer / 'MonacoEditor.Status.cs').read_text()
+assert 'public bool TryGetLanguageStatus(out EditorLanguageStatus status)' in (renderer / 'MonacoEditor.Status.cs').read_text(encoding="utf-8")
 assert 'SampleBox.SelectedIndex = 2' in source_sample, 'initial example must remain the preformatted C# sample'
 for name in ('demo.html','demo.js','demo.cs','demo.cpp','demo.json','demo.css','demo.ts'):
     assert (app_dir / 'Assets/Samples' / name).is_file(), name
@@ -72,8 +72,8 @@ for language, scanner in (('Json', 'JsoncScanner'), ('Html', 'HtmlScanner'), ('C
     assert 'CancellationToken' in source_scanner, scanner
     provider = (directory / f'{language}SyntaxCompletionProvider.cs').read_text(encoding='utf-8')
     if language == 'Css':
-        assert 'CssDocument.Parse(' in provider and 'CssDialectScanner.Create(languageId, text, cancellationToken)' in (directory / 'CssDocument.cs').read_text(), 'CSS tree must dispatch the document dialect scanner'
-        dialects = (directory / 'CssDialectScanner.cs').read_text()
+        assert 'CssDocument.Parse(' in provider and 'CssDialectScanner.Create(languageId, text, cancellationToken)' in (directory / 'CssDocument.cs').read_text(encoding="utf-8"), 'CSS tree must dispatch the document dialect scanner'
+        dialects = (directory / 'CssDialectScanner.cs').read_text(encoding="utf-8")
         for implementation in ('new CssScanner(', 'new ScssScanner(', 'new LessScanner('):
             assert implementation in dialects, implementation
     else:
@@ -85,21 +85,21 @@ assert 'RegisterDocumentRangeFormattingEditProvider' in json_package
 assert 'new JsoncFormattingProvider()' in json_package
 assert 'new JsonNativeLanguageService(Schemas)' in json_package
 assert 'RegisterDocumentDiagnosticsProvider' in json_package
-sharp_package = (root / 'src/MonacoNative.Language.CSharp/CSharpLanguagePackage.cs').read_text()
+sharp_package = (root / 'src/MonacoNative.Language.CSharp/CSharpLanguagePackage.cs').read_text(encoding="utf-8")
 assert 'new CSharpNativeLanguageService(Options)' in sharp_package
 assert 'new WordCompletionProvider' not in sharp_package
-sharp_engine = (root / 'src/MonacoNative.Language.CSharp/CSharpNativeLanguageService.cs').read_text()
+sharp_engine = (root / 'src/MonacoNative.Language.CSharp/CSharpNativeLanguageService.cs').read_text(encoding="utf-8")
 assert 'CompletionService.GetService(document)' in sharp_engine
 assert 'RequireResolvedEdit: true' in sharp_engine
 assert 'RequireResolvedEdit = false' in sharp_engine
 for package_dir in root.glob('src/MonacoNative.Language.*'):
     for source_path in package_dir.glob('*.cs'):
-        implementation = source_path.read_text()
+        implementation = source_path.read_text(encoding="utf-8")
         assert 'Process.Start(' not in implementation and 'new Process(' not in implementation
         assert 'StdioLspTransport' not in implementation and 'LanguageServerLauncher' not in implementation
 assert 's.LanguageId is "html" or "javascript" or "csharp"' not in source_sample
 assert 'ScheduleNativeDiagnostics' in source and 'CancelNativeDiagnostics' in source
-language_ui = (renderer / 'MonacoEditor.Language.cs').read_text()
+language_ui = (renderer / 'MonacoEditor.Language.cs').read_text(encoding="utf-8")
 assert 'snapshot.Matches(_languageDocument)' in language_ui
 assert 'LanguageModelSnapshot.Capture' in language_ui
 
@@ -107,10 +107,10 @@ print('PASS: native-only built-in package declarations, scanner/provider wiring 
 
 # Formatting belongs to language packages rather than SampleApp.
 for language in ('Html', 'Css', 'Cpp'):
-    package = (root / f'src/MonacoNative.Language.{language}/{language}LanguagePackage.cs').read_text()
+    package = (root / f'src/MonacoNative.Language.{language}/{language}LanguagePackage.cs').read_text(encoding="utf-8")
     assert 'RegisterDocumentFormattingEditProvider' in package, f'{language}: document formatter missing'
     assert 'RegisterDocumentRangeFormattingEditProvider' in package, f'{language}: range formatter missing'
-ts_package = (root / 'src/MonacoNative.Language.TypeScript/TypeScriptLanguagePackage.cs').read_text()
+ts_package = (root / 'src/MonacoNative.Language.TypeScript/TypeScriptLanguagePackage.cs').read_text(encoding="utf-8")
 assert 'RegisterDocumentFormattingEditProvider' in ts_package and 'RegisterDocumentRangeFormattingEditProvider' in ts_package
 assert (root / 'src/MonacoNative.Language/BasicSourceFormatter.cs').is_file()
 assert not (root / 'src/MonacoNative.SampleApp/DemoSampleFormattingProvider.cs').exists()
@@ -127,7 +127,7 @@ sample_keys = {
 }
 find_keys={'noResults','matchCount','regex','inSelection','preserveCase','toggleReplace','selectTextFirst','invalidRegex'}
 for culture in ('en-US','zh-CN','ja-JP','ko-KR'):
-    data=json.loads((root / 'src/MonacoNative.EditorServices/I18n/Locales' / (culture+'.json')).read_text())
+    data=json.loads((root / 'src/MonacoNative.EditorServices/I18n/Locales' / (culture+'.json')).read_text(encoding="utf-8"))
     missing={f'monacoNative.sample.{key}' for key in sample_keys} | {f'monacoNative.find.{key}' for key in find_keys}
     assert not (missing - data.keys()), f'{culture} missing translations: {missing - data.keys()}'
     assert all(bool(value.strip()) for value in data.values()), f'{culture}: empty translations'
@@ -144,19 +144,19 @@ print('PASS: renderer-owned viewport extent and localized keyboard shortcut pick
 print('PASS: compact find placement, minimap protection, localized view options and toggle defaults')
 
 # Both new engines must remain in-process and inside the existing native project.
-native_project = (root / 'src/MonacoNative.Core.Native/MonacoNative.Core.Native.vcxproj').read_text()
-native_cmake = (root / 'src/MonacoNative.Core.Native/CMakeLists.txt').read_text()
+native_project = (root / 'src/MonacoNative.Core.Native/MonacoNative.Core.Native.vcxproj').read_text(encoding="utf-8")
+native_cmake = (root / 'src/MonacoNative.Core.Native/CMakeLists.txt').read_text(encoding="utf-8")
 for name in ('ClangLanguageEngine.cpp', 'TypeScriptLanguageEngine.cpp'):
     assert name in native_project and name in native_cmake, name
 for language, service in (('Cpp', 'CppNativeLanguageService'), ('TypeScript', 'TypeScriptNativeLanguageService')):
-    source = (root / f'src/MonacoNative.Language.{language}/{language}LanguagePackage.cs').read_text()
+    source = (root / f'src/MonacoNative.Language.{language}/{language}LanguagePackage.cs').read_text(encoding="utf-8")
     assert f'new {service}(' in source
     for provider in ('CompletionItem', 'Hover', 'Definition', 'DocumentDiagnostics'):
         assert f'Register{provider}Provider' in source
     for native in (root / f'src/MonacoNative.Language.{language}/Native').glob('*'):
-        text = native.read_text()
+        text = native.read_text(encoding="utf-8")
         assert 'system(' not in text and 'popen(' not in text and 'CreateProcess' not in text
-bridge = (root / 'src/MonacoNative.Language/NativeCompilerService.cs').read_text()
+bridge = (root / 'src/MonacoNative.Language/NativeCompilerService.cs').read_text(encoding="utf-8")
 for required in ('SafeHandleZeroOrMinusOneIsInvalid', 'mn_language_free', 'Encoding.UTF8.GetCharCount', 'Task.Run', 'EnsureAbi', 'NATIVE_UNAVAILABLE'):
     assert required in bridge, required
 print('PASS: in-process Clang/TypeScript provider wiring, ABI lifetime and byte-to-UTF-16 conversion guards')
@@ -171,9 +171,9 @@ cpp_refs = {item.attrib['Include']: item.attrib['Version'] for item in cpp_proje
 for rid in ('win-x64', 'win-arm64'):
     assert cpp_refs['libclang.runtime.' + rid] == '[17.0.4]'
 assert 'MonacoLLVMRoot' not in csproj
-assert 'UpstreamPortTests.Run();' in (root / 'tests/LanguageTests/Program.cs').read_text()
+assert 'UpstreamPortTests.Run();' in (root / 'tests/LanguageTests/Program.cs').read_text(encoding="utf-8")
 for part in ('Json', 'Html', 'Css'):
     assert (root / f'tests/LanguageTests/UpstreamPortTests.{part}.cs').is_file()
-assert 'UpstreamScannerTests.cpp' in (root / 'tests/NativeAbiTests/CMakeLists.txt').read_text()
-assert 'RegisterRenameProvider' in (root / 'src/MonacoNative.Language.Html/HtmlLanguagePackage.cs').read_text()
+assert 'UpstreamScannerTests.cpp' in (root / 'tests/NativeAbiTests/CMakeLists.txt').read_text(encoding="utf-8")
+assert 'RegisterRenameProvider' in (root / 'src/MonacoNative.Language.Html/HtmlLanguagePackage.cs').read_text(encoding="utf-8")
 print('PASS: exact precompiled dependency versions, RID assets, ported test build inputs and HTML rename registration')

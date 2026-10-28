@@ -185,12 +185,12 @@ assert 'ObserveEdit' in snippets and 'GetLinkedEdits' in snippets and 'BeginUndo
 assert 'StartSnippetSession(expansion, insertionStart)' in contributions
 assert 'insertionStart = start + edits.Where' in contributions
 assert 'Completion edits overlap' in contributions
-assert 'completionItem/resolve' in adapter and 'itemDefaults' in adapter and 'SnippetText' in (root / 'src/MonacoNative.Language/Providers.cs').read_text()
+assert 'completionItem/resolve' in adapter and 'itemDefaults' in adapter and 'SnippetText' in (root / 'src/MonacoNative.Language/Providers.cs').read_text(encoding="utf-8")
 assert 'CodiconPresenter.Create(item.Kind' in suggest and 'XamlReader.Load' in icons
 assert 'Symbol' in suggest and 'Segoe MDL2' not in suggest
 assert 'CompletionFuzzyScore.Match' in ranking and 'WordDistance' in ranking and '_prefixMemory' in ranking
 assert 'TrackIncompleteCompletionEdit(e)' in source
-assert 'commitCharactersSupport = false' in (root / 'src/MonacoNative.Language/Lsp/LspClient.cs').read_text()
+assert 'commitCharactersSupport = false' in (root / 'src/MonacoNative.Language/Lsp/LspClient.cs').read_text(encoding="utf-8")
 assert 'editor.action.triggerParameterHints' in contributions
 for suffix in ('.ttf', '.otf', '.woff', '.woff2'):
     assert not list(root.rglob('*' + suffix)), 'No font files in source delivery'
@@ -237,8 +237,8 @@ async_dispose = lsp_session[lsp_session.index('public async ValueTask DisposeAsy
 assert '_disposeCts.Cancel();' not in async_dispose.split('}', 1)[0], 'Async LSP disposal should drain rather than cancel the worker'
 assert 'ScheduleAutomaticParameterHints();' in contributions
 assert 'parameterHintsVisible && !suggestWidgetVisible' in contributions
-assert 'RegisterSignatureHelpProvider' in (root / 'src/MonacoNative.Language.TypeScript/TypeScriptLanguagePackage.cs').read_text()
-assert 'BasicEditingTests.cpp' in (root / 'tests/NativeAbiTests/CMakeLists.txt').read_text()
+assert 'RegisterSignatureHelpProvider' in (root / 'src/MonacoNative.Language.TypeScript/TypeScriptLanguagePackage.cs').read_text(encoding="utf-8")
+assert 'BasicEditingTests.cpp' in (root / 'tests/NativeAbiTests/CMakeLists.txt').read_text(encoding="utf-8")
 print('PASS: parameter-hints triggers, lifecycle and stale-result guards')
 
 # Guard the source-level connections for editing interactions.

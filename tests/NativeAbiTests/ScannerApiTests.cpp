@@ -817,15 +817,18 @@ void host_contracts() {
     try { scanner.look_ahead([&]() -> int { scanner.scan(); throw std::runtime_error("expected"); }); }
     catch (const std::runtime_error&) { }
     require(equal_state(scanner, second, secondFull), "lookAhead exception safety");
-    try { scanner.try_scan([&]() -> bool { scanner.scan(); throw std::runtime_error("expected"); }); }
-    catch (const std::runtime_error&) { }
-    require(equal_state(scanner, second, secondFull), "tryScan exception safety");
+    // Keep a reachable return path for MSVC /O2 while exercising exception-safe state restoration.
+    volatile bool shouldThrow = true;
+    bool caught = false;
+    try { scanner.try_scan([&]() -> bool { scanner.scan(); if (shouldThrow) throw std::runtime_error("expected"); return false; }); }
+    catch (const std::runtime_error&) { caught = true; }
+    require(caught && equal_state(scanner, second, secondFull), "tryScan exception safety");
     try { scanner.scan_range(0, 1, [&]() -> int { scanner.scan(); throw std::runtime_error("expected"); }); }
     catch (const std::runtime_error&) { }
     require(equal_state(scanner, second, secondFull), "scanRange exception safety");
     for (const auto& [offset, length] : {std::pair<size_t, size_t>{100, 1}, {0, 100}, {0, static_cast<size_t>(-1)}}) {
-        bool caught = false; try { scanner.scan_range(offset, length, [] { return true; }); } catch (const std::out_of_range&) { caught = true; }
-        require(caught && equal_state(scanner, second, secondFull), "invalid range must not mutate state");
+        bool invalidRangeCaught = false; try { scanner.scan_range(offset, length, [] { return true; }); } catch (const std::out_of_range&) { invalidRangeCaught = true; }
+        require(invalidRangeCaught && equal_state(scanner, second, secondFull), "invalid range must not mutate state");
     }
     scanner.reset_token_state(0);
     require(scanner.pos == 0 && scanner.kind == 0 && scanner.flags == 0 && scanner.token_value.empty(), "resetTokenState");

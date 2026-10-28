@@ -207,8 +207,10 @@ static class Tests
         var choiceSession = new SnippetSession(choiceExpansion, 0);
         var choiceText = choiceExpansion.Text;
         var choiceStop = choiceSession.Current!;
-        AssertEx.True(choiceSession.ObserveEdit(choiceStop.Start, choiceStop.Length, "green"), "choice edit retains snippet session");
-        choiceText = choiceText.Remove(choiceStop.Start, choiceStop.Length).Insert(choiceStop.Start, "green");
+        var choiceStart = choiceStop.Start; var choiceLength = choiceStop.Length;
+        AssertEx.True(choiceSession.ObserveEdit(choiceStart, choiceLength, "green"), "choice edit retains snippet session");
+        AssertEx.Equal(5, choiceStop.Length, "session rebases the live placeholder after replacement");
+        choiceText = choiceText.Remove(choiceStart, choiceLength).Insert(choiceStart, "green");
         foreach (var edit in choiceSession.GetLinkedEdits(1, (start, length) => choiceText.Substring(start, length)))
         {
             choiceSession.ApplyLinkedEdit(edit);

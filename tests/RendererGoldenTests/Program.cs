@@ -44,14 +44,23 @@ internal static class Program
             if (!float.TryParse(dpiArgument, NumberStyles.Float, CultureInfo.InvariantCulture, out var dpi) ||
                 dpi is not (96f or 120f or 144f or 192f))
                 throw new ArgumentException("--dpi must be 96, 120, 144, or 192.");
+            // Reuse one software device so both snapshots have the same DirectWrite
+            // font/cache state. A warm-up render resolves lazy font fallbacks before
+            // the two independent render targets are compared pixel-for-pixel.
+            Console.WriteLine("[RendererGolden] Creating software CanvasDevice");
+            using var device = new CanvasDevice(forceSoftwareRenderer: true);
+            Console.WriteLine($"[RendererGolden] Warming up DirectWrite at {dpi} DPI");
+            _ = RenderSnapshot(device, dpi);
             Console.WriteLine($"[RendererGolden] First RenderSnapshot at {dpi} DPI");
-            var first = RenderSnapshot(dpi);
+            var first = RenderSnapshot(device, dpi);
             Console.WriteLine($"[RendererGolden] Second RenderSnapshot at {dpi} DPI");
-            var second = RenderSnapshot(dpi);
+            var second = RenderSnapshot(device, dpi);
             if (first.Metadata.InkPixels <= 100)
                 throw new InvalidOperationException("DirectWrite probe produced an unexpectedly empty image.");
             if (!string.Equals(first.Metadata.Sha256, second.Metadata.Sha256, StringComparison.Ordinal) || first.Metadata.InkPixels != second.Metadata.InkPixels)
-                throw new InvalidOperationException("Software-rendered DirectWrite probe was not deterministic within one process.");
+                throw new InvalidOperationException($"Software-rendered DirectWrite probe was not deterministic within one process. " +
+                    $"First: {first.Metadata.Sha256} ({first.Metadata.InkPixels} ink pixels); " +
+                    $"second: {second.Metadata.Sha256} ({second.Metadata.InkPixels} ink pixels).");
 
             File.WriteAllText(output, JsonSerializer.Serialize(first.Metadata, new JsonSerializerOptions { WriteIndented = true }));
             var png = GetArg(args, "--png") ?? Path.ChangeExtension(output, ".png");
@@ -87,7 +96,7 @@ internal static class Program
         }
     }
 
-    private static RenderResult RenderSnapshot(float dpi)
+    private static RenderResult RenderSnapshot(CanvasDevice device, float dpi)
     {
         // The render target dimensions are DIPs; GetPixelBytes returns physical
         // pixels. Never pass DIP dimensions to the PNG writer on scaled displays.
@@ -95,9 +104,6 @@ internal static class Program
         const int height = 240;
         var pixelWidth = checked((int)MathF.Round(width * dpi / 96f));
         var pixelHeight = checked((int)MathF.Round(height * dpi / 96f));
-        Console.WriteLine("[RendererGolden] Creating software CanvasDevice");
-        using var device = new CanvasDevice(forceSoftwareRenderer: true);
-        Console.WriteLine("[RendererGolden] CanvasDevice created");
         using var target = new CanvasRenderTarget(device, width, height, dpi);
         using var format = new CanvasTextFormat
         {

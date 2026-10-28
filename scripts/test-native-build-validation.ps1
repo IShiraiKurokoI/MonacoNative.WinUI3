@@ -44,13 +44,39 @@ if ($CoreOnly) {
 $sampleOut = Join-Path $root "src/MonacoNative.SampleApp/bin/$Platform/$Configuration"
 $clangMatches = @(Get-ChildItem -Path $sampleOut -Recurse -Filter 'libclang.dll' -File -ErrorAction SilentlyContinue)
 if ($clangMatches.Count -lt 1) { throw "Sample build has no deployed libclang.dll below $sampleOut" }
+
+# The multi-RID NuGet output can contain BOTH win-x64 and win-arm64 native assets.
+# Never take the first recursive match: its enumeration order is not the target RID.
+# Read only the PE headers (do not load or execute native code) to select the fixture.
+function Get-PeMachine([string]$Path) {
+    $stream = [System.IO.File]::OpenRead($Path)
+    try {
+        $reader = [System.IO.BinaryReader]::new($stream)
+        if ($stream.Length -lt 0x40 -or $reader.ReadUInt16() -ne 0x5A4D) { return $null }
+        $stream.Position = 0x3c
+        $peOffset = $reader.ReadUInt32()
+        if ($peOffset -lt 0x40 -or ([long]$peOffset + 6) -gt $stream.Length) { return $null }
+        $stream.Position = $peOffset
+        if ($reader.ReadUInt32() -ne 0x00004550) { return $null }
+        return $reader.ReadUInt16()
+    }
+    finally { $stream.Dispose() }
+}
+$expectedMachine = if ($Platform -eq 'ARM64') { 0xAA64 } else { 0x8664 }
+$matchingClang = @($clangMatches | Where-Object { (Get-PeMachine $_.FullName) -eq $expectedMachine })
+if ($matchingClang.Count -eq 0) {
+    throw "No $Platform libclang.dll was deployed below $sampleOut; found $($clangMatches.Count) DLL candidate(s), but none match PE machine 0x$('{0:X4}' -f $expectedMachine)."
+}
+# Prefer the least-nested deployed copy when both the app root and RID assets exist.
+$selectedClang = $matchingClang | Sort-Object { $_.FullName.Length } | Select-Object -First 1
+Write-Host "Native validation fixture: selected $($selectedClang.FullName) ($Platform)"
 $staged = Join-Path $root 'artifacts/native-validation/publish-fixture'
 if (Test-Path -LiteralPath $staged) { Remove-Item -LiteralPath $staged -Recurse -Force }
 New-Item -Path $staged -ItemType Directory -Force | Out-Null
 $stagedCore = Join-Path $staged 'MonacoNative.Core.Native.dll'
 $stagedClang = Join-Path $staged 'libclang.dll'
 Copy-Item -LiteralPath $dll -Destination $stagedCore
-Copy-Item -LiteralPath $clangMatches[0].FullName -Destination $stagedClang
+Copy-Item -LiteralPath $selectedClang.FullName -Destination $stagedClang
 
 function Invoke-PublishFixture([string]$Case, [string]$Architecture,
                                 [bool]$ExpectSuccess, [bool]$SingleFile = $false) {

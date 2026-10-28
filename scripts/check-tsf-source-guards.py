@@ -1,9 +1,9 @@
 from pathlib import Path
 import sys
 root = Path(__file__).resolve().parents[1]
-tsf = (root/'src/MonacoNative.Input.Native/src/TsfTextStore.cpp').read_text()
-test = (root/'tests/NativeInputTests/TsfTextStoreTests.cpp').read_text()
-core = (root/'src/MonacoNative.Core.Native/MonacoNative.Core.Native.cpp').read_text()
+tsf = (root/'src/MonacoNative.Input.Native/src/TsfTextStore.cpp').read_text(encoding="utf-8")
+test = (root/'tests/NativeInputTests/TsfTextStoreTests.cpp').read_text(encoding="utf-8")
+core = (root/'src/MonacoNative.Core.Native/MonacoNative.Core.Native.cpp').read_text(encoding="utf-8")
 checks = [
     ('ocidl interface header', '#include <ocidl.h>' in tsf),
     ('obsolete olectl include absent', '#include <olectl.h>' not in tsf),

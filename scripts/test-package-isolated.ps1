@@ -36,9 +36,12 @@ $exitCode = $null
 $stdoutFile = Join-Path (Split-Path -Parent $ReportPath) "isolated-$($Platform.ToLowerInvariant())-stdout.log"
 $stderrFile = Join-Path (Split-Path -Parent $ReportPath) "isolated-$($Platform.ToLowerInvariant())-stderr.log"
 try {
-    New-Item -ItemType Directory -Force -Path $work | Out-Null
-    Copy-Item -LiteralPath (Join-Path $source 'CoreConsumer.csproj') -Destination $work
-    Copy-Item -LiteralPath (Join-Path $source 'Program.cs') -Destination $work
+    # Keep the project below a dedicated source directory. MSBuild XAML globs
+    # must not traverse the sibling NuGet cache and compile package build rules.
+    $projectDir = Join-Path $work 'consumer'
+    New-Item -ItemType Directory -Force -Path $projectDir | Out-Null
+    Copy-Item -LiteralPath (Join-Path $source 'CoreConsumer.csproj') -Destination $projectDir
+    Copy-Item -LiteralPath (Join-Path $source 'Program.cs') -Destination $projectDir
     $safePath = [System.Security.SecurityElement]::Escape($PackageDirectory)
     $nuget = @"
 <?xml version="1.0" encoding="utf-8"?>
@@ -55,13 +58,13 @@ try {
     $env:NUGET_PACKAGES = Join-Path $work 'packages'
     $env:NUGET_HTTP_CACHE_PATH = Join-Path $work 'http-cache'
     $env:DOTNET_CLI_HOME = Join-Path $work 'cli-home'
-    $project = Join-Path $work 'CoreConsumer.csproj'
+    $project = Join-Path $projectDir 'CoreConsumer.csproj'
     & dotnet restore $project --configfile $config "-p:Platform=$Platform" "-p:MonacoNativePackageVersion=$Version"
     if ($LASTEXITCODE -ne 0) { throw "Isolated NuGet restore failed ($LASTEXITCODE)." }
     & dotnet build $project -c $Configuration --no-restore "-p:Platform=$Platform" "-p:MonacoNativePackageVersion=$Version"
     if ($LASTEXITCODE -ne 0) { throw "Isolated consumer build failed ($LASTEXITCODE)." }
     $rid = 'win-' + $Platform.ToLowerInvariant()
-    $output = Join-Path $work "bin/$Platform/$Configuration/net10.0-windows10.0.26100.0/$rid"
+    $output = Join-Path $projectDir "bin/$Platform/$Configuration/net10.0-windows10.0.26100.0/$rid"
     $exe = Join-Path $output 'CoreConsumer.exe'
     $native = Join-Path $output 'MonacoNative.Core.Native.dll'
     foreach ($path in @($exe, $native)) {

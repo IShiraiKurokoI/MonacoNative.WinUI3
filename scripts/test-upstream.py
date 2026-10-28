@@ -56,14 +56,14 @@ class UpstreamTests(unittest.TestCase):
         (self.destination / "build").mkdir()
         (self.destination / "build/cache").write_text("keep")
         self.fetch()
-        self.assertEqual((self.destination / "build/cache").read_text(), "keep")
+        self.assertEqual((self.destination / "build/cache").read_text(encoding="utf-8"), "keep")
 
     def test_modified_source_is_never_reset(self):
         self.fetch()
         (self.destination / "source.cpp").write_text("keep user edit")
         with self.assertRaisesRegex(RuntimeError, "local modifications"):
             self.fetch()
-        self.assertEqual((self.destination / "source.cpp").read_text(), "keep user edit")
+        self.assertEqual((self.destination / "source.cpp").read_text(encoding="utf-8"), "keep user edit")
 
     def test_untracked_source_is_not_deleted(self):
         self.fetch()
@@ -93,7 +93,7 @@ class UpstreamTests(unittest.TestCase):
         self.assertEqual(list(self.destination.parent.glob("dependency.fetch-*")), [])
 
     def test_lock_requires_full_revision_and_safe_relative_directory(self):
-        lock = json.loads(upstream.LOCK.read_text())
+        lock = json.loads(upstream.LOCK.read_text(encoding="utf-8"))
         path = self.root / "lock.json"
         for key, value in (("revision", "main"), ("directory", "external/../../escape"),
                            ("repository", "ssh://example.invalid/repo")):
@@ -145,7 +145,7 @@ class UpstreamTests(unittest.TestCase):
         (install / "lib/clang/17/include").mkdir(parents=True)
         (install / "lib/clang/17/include/stddef.h").write_text("fixture header")
         upstream.write_llvm_receipt(self.dep, source, install, "x64")
-        receipt = json.loads((install / "monaco-upstream.json").read_text())
+        receipt = json.loads((install / "monaco-upstream.json").read_text(encoding="utf-8"))
         self.assertEqual(receipt["revision"], self.revision)
         self.assertEqual(receipt["resourceDirectory"], "lib/clang/17")
         self.assertEqual(len(list((install / "share/licenses").glob("*"))), 2)

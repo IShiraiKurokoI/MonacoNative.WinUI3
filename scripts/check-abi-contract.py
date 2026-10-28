@@ -72,8 +72,8 @@ print(f'Current native ABI {version} contract OK: {len(exports)} exports, {len(i
 
 # Language extension is separately versioned, without changing the editor/model ABI.
 language = contract['languageExtension']
-language_header = (root / 'src/MonacoNative.Core.Native' / language['header']).read_text()
-language_binding = (root / 'src/MonacoNative.Language/NativeCompilerService.cs').read_text()
+language_header = (root / 'src/MonacoNative.Core.Native' / language['header']).read_text(encoding="utf-8")
+language_binding = (root / 'src/MonacoNative.Language/NativeCompilerService.cs').read_text(encoding="utf-8")
 language_exports = re.findall(r'MN_API\s+[^;\n]+?\bMN_CALL\s+(mn_[A-Za-z0-9_]+)\s*\(', language_header)
 assert language_exports == language['exports'], 'native language export contract drift'
 language_imports = re.findall(r'private static extern [^;\n]+?\b(mn_[A-Za-z0-9_]+)\s*\(', language_binding)

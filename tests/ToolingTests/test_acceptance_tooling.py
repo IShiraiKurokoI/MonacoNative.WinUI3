@@ -74,7 +74,7 @@ class AcceptanceTests(unittest.TestCase):
             self.assertNotEqual(module.verify(data, "0.1.0"), [])
 
     def test_matrices_no_longer_request_textbox_proxy(self):
-        matrix = json.loads((ROOT / "reference/ime-interactive-matrix.json").read_text())
+        matrix = json.loads((ROOT / "reference/ime-interactive-matrix.json").read_text(encoding="utf-8"))
         self.assertNotIn("runtime-backend-switch", [case["id"] for case in matrix["cases"]])
         rendered = json.dumps(matrix).lower()
         self.assertNotIn("textbox proxy", rendered)

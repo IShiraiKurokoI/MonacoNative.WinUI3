@@ -1,6 +1,6 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <!-- Invoke the exact shipping inline validator from MSBuild, not a reimplementation.
-       The no-compile Publish target models a --no-build deployment validation. -->
+       The no-compile Publish target models a no-build deployment validation. -->
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <MonacoNativeValidateCore>true</MonacoNativeValidateCore>
