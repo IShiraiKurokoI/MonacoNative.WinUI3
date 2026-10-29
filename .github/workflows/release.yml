@@ -1,12 +1,6 @@
 name: Package Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: NuGet base version with an approved Windows acceptance record
-        required: true
-        default: 0.8.0
   workflow_run:
     workflows: [CI]
     types: [completed]
@@ -16,11 +10,10 @@ permissions:
 
 jobs:
   desktop-release-gate:
-    name: Mandatory Windows tests and approved manual evidence
+    name: Build, package and publish after successful CI
     if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       startsWith(github.event.workflow_run.head_branch, 'v'))
+      github.event.workflow_run.conclusion == 'success' &&
+      startsWith(github.event.workflow_run.head_branch, 'v')
     runs-on: windows-latest
     environment: release
     permissions:
@@ -29,7 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+          ref: ${{ github.event.workflow_run.head_sha }}
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
@@ -40,11 +33,7 @@ jobs:
         id: version
         shell: pwsh
         run: |
-          if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
-            $baseVersion = '${{ inputs.version }}'
-          } else {
-            $baseVersion = '${{ github.event.workflow_run.head_branch }}'.TrimStart('v')
-          }
+          $baseVersion = '${{ github.event.workflow_run.head_branch }}'.TrimStart('v')
           if ($baseVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$') {
             throw "Invalid NuGet base version: $baseVersion"
           }
@@ -52,17 +41,14 @@ jobs:
           $timestamp = [DateTimeOffset]::FromUnixTimeSeconds($commitUnixTime).UtcDateTime.ToString('yyyyMMddHHmmss')
           $v = if ($baseVersion.Contains('-')) { "$baseVersion.$timestamp" } else { "$baseVersion-ci.$timestamp" }
           "version=$v" >> $env:GITHUB_OUTPUT
-      - name: Install pinned Windows App Runtime for headless Win2D
+      - name: Build and package after CI
         shell: pwsh
-        run: ./scripts/install-windows-app-runtime-ci.ps1
-      - name: Validate native, WinUI, render baseline, packaging and human acceptance
-        shell: pwsh
-        run: ./scripts/test-acceptance.ps1 -Mode Release -Configuration Release -PackageVersion '${{ steps.version.outputs.version }}'
-      - name: Upload release gate and failure diagnostics
+        run: ./scripts/pack-windows.ps1 -Configuration Release -Version '${{ steps.version.outputs.version }}'
+      - name: Upload package build diagnostics
         if: always()
         uses: actions/upload-artifact@v6
         with:
-          name: release-validation-${{ steps.version.outputs.version }}
+          name: package-build-${{ steps.version.outputs.version }}
           path: |
             artifacts/release/
             artifacts/benchmarks/

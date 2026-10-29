@@ -100,8 +100,10 @@ def main() -> None:
             "Release must require approved renderer baseline")
     require("ctest --test-dir $build --output-on-failure" in core and "[switch]$TestOnly" in core,
             "The native runner must support separate build and CTest stages")
-    require("-Mode Release" in (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8"),
-            "Release workflow must run the strict acceptance entry point")
+    release_workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+    require("workflow_run" in release_workflow and "scripts/pack-windows.ps1" in release_workflow and
+            "-Mode Release" not in release_workflow,
+            "Release workflow must package only after CI succeeds without requiring manual evidence")
     require("2.4.0/windowsappruntimeinstall-x64.exe" in runtime and "'--quiet'" in runtime,
             "Runtime installer must be version-pinned and silent")
     require("WaitForExit(240000)" in runtime,

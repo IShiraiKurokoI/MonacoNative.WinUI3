@@ -1,5 +1,7 @@
 # MonacoNative.WinUI3
 
+[![CI](https://github.com/IShiraiKurokoI/MonacoNative.WinUI3/actions/workflows/ci.yml/badge.svg)](https://github.com/IShiraiKurokoI/MonacoNative.WinUI3/actions/workflows/ci.yml)
+
 A personal hobby project for building a native WinUI 3 code editor without WebView2.
 
 The editor uses a C++20 text core, a WinUI 3 / Win2D renderer, native Windows text input, and in-process language services. Monaco Editor and VS Code are used as behavior and implementation references where it makes sense.
