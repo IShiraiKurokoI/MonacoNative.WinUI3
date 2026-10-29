@@ -101,9 +101,12 @@ def main() -> None:
     require("ctest --test-dir $build --output-on-failure" in core and "[switch]$TestOnly" in core,
             "The native runner must support separate build and CTest stages")
     release_workflow = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
-    require("workflow_run" in release_workflow and "scripts/pack-windows.ps1" in release_workflow and
-            "-Mode Release" not in release_workflow,
-            "Release workflow must package only after CI succeeds without requiring manual evidence")
+    require("workflow_run" in release_workflow and
+            "if: github.event.workflow_run.conclusion == 'success'" in release_workflow and
+            "head_branch" not in release_workflow and "environment: release" in release_workflow and
+            "scripts/pack-windows.ps1" in release_workflow and "-Mode Release" not in release_workflow,
+            "Release workflow must gate publishing on successful CI and the release environment "
+            "without branch restrictions or manual evidence files")
     require("2.4.0/windowsappruntimeinstall-x64.exe" in runtime and "'--quiet'" in runtime,
             "Runtime installer must be version-pinned and silent")
     require("WaitForExit(240000)" in runtime,
