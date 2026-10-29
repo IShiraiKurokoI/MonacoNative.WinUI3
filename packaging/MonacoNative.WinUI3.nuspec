@@ -3,12 +3,18 @@
   <metadata>
     <id>MonacoNative.WinUI3</id>
     <version>$version$</version>
+    <title>MonacoNative WinUI 3</title>
     <authors>MonacoNative</authors>
-    <owners>MonacoNative</owners>
+    <owners>Kurokawa_Nene</owners>
+    <projectUrl>https://github.com/IShiraiKurokoI/MonacoNative.WinUI3</projectUrl>
+    <repository type="git" url="https://github.com/IShiraiKurokoI/MonacoNative.WinUI3.git" />
+    <copyright>Copyright (c) 2026 MonacoNative contributors</copyright>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <license type="file">LICENSE</license>
+    <icon>monaconative.png</icon>
     <readme>README.md</readme>
     <description>Native Monaco-style editor for WinUI 3 with C++ core, managed projection, native rendering, diff editor, language providers, LSP, IME, accessibility and globalization.</description>
+    <releaseNotes>See the project repository releases for version-specific notes.</releaseNotes>
     <tags>monaco editor winui winui3 native cpp lsp diff accessibility</tags>
     <dependencies>
       <group targetFramework="net10.0-windows10.0.26100.0">
@@ -22,6 +28,7 @@
   </metadata>
   <files>
     <file src="..\LICENSE" target="LICENSE" />
+    <file src="icon\monaconative.png" target="" />
     <file src="..\README.md" target="README.md" />
     <file src="..\THIRD_PARTY_NOTICES.md" target="THIRD_PARTY_NOTICES.md" />
     <file src="..\doc\**\*" target="doc" />

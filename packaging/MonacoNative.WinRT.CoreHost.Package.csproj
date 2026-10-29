@@ -5,6 +5,6 @@
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <NuspecFile>$(MSBuildThisFileDirectory)MonacoNative.WinRT.CoreHost.nuspec</NuspecFile>
     <NuspecProperties>version=$(PackageVersion);configuration=$(Configuration)</NuspecProperties>
-    <PackageVersion Condition="'$(PackageVersion)' == ''">0.1.0</PackageVersion>
+    <PackageVersion Condition="'$(PackageVersion)' == ''">0.8.0</PackageVersion>
   </PropertyGroup>
 </Project>

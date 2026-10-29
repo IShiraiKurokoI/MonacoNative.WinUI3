@@ -14,7 +14,7 @@
     <EnableMsixTooling>false</EnableMsixTooling>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <MonacoNativePackageVersion Condition="'$(MonacoNativePackageVersion)' == ''">0.1.0</MonacoNativePackageVersion>
+    <MonacoNativePackageVersion Condition="'$(MonacoNativePackageVersion)' == ''">0.8.0</MonacoNativePackageVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="MonacoNative.WinUI3" Version="$(MonacoNativePackageVersion)" />

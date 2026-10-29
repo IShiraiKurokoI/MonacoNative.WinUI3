@@ -1,6 +1,6 @@
 param(
     [ValidateSet('Debug', 'Release')][string]$Configuration = 'Release',
-    [string]$Version = '0.1.0'
+    [string]$Version = '0.8.0'
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot

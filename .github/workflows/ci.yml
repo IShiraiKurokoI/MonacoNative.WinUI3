@@ -134,11 +134,11 @@ jobs:
         run: ./scripts/install-windows-app-runtime-ci.ps1
       - name: Run unified Windows desktop automated acceptance
         shell: pwsh
-        run: ./scripts/test-acceptance.ps1 -Mode Automated -Configuration ${{ matrix.configuration }} -RunPackages -PackageVersion 0.1.0-ci
+        run: ./scripts/test-acceptance.ps1 -Mode Automated -Configuration ${{ matrix.configuration }} -RunPackages -PackageVersion 0.8.0-ci
       - name: Restore and execute a package-only x64 consumer with an empty cache
         if: matrix.configuration == 'Release'
         shell: pwsh
-        run: ./scripts/test-package-isolated.ps1 -Platform x64 -Configuration Release -Version 0.1.0-ci
+        run: ./scripts/test-package-isolated.ps1 -Platform x64 -Configuration Release -Version 0.8.0-ci
       - name: Upload Windows acceptance results, CTest and package smoke logs
         if: always()
         uses: actions/upload-artifact@v6
@@ -219,7 +219,7 @@ jobs:
           path: artifacts/packages
       - name: Execute isolated ARM64 package consumer
         shell: pwsh
-        run: ./scripts/test-package-isolated.ps1 -Platform ARM64 -Configuration Release -Version 0.1.0-ci
+        run: ./scripts/test-package-isolated.ps1 -Platform ARM64 -Configuration Release -Version 0.8.0-ci
       - name: Upload isolated ARM64 package evidence
         if: always()
         uses: actions/upload-artifact@v6

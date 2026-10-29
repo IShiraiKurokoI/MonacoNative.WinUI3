@@ -2,7 +2,7 @@
 [CmdletBinding()]
 param(
     [ValidateSet('Release')][string]$Configuration = 'Release',
-    [string]$PackageVersion = '0.1.0'
+    [string]$PackageVersion = '0.8.0'
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot

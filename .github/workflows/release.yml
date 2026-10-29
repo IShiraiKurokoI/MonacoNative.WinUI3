@@ -4,12 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: NuGet version with an approved Windows acceptance record
+        description: NuGet base version with an approved Windows acceptance record
         required: true
-        default: 0.1.0
-  push:
-    tags:
-      - 'v*'
+        default: 0.8.0
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
 
 permissions:
   contents: read
@@ -17,9 +17,19 @@ permissions:
 jobs:
   desktop-release-gate:
     name: Mandatory Windows tests and approved manual evidence
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       startsWith(github.event.workflow_run.head_branch, 'v'))
     runs-on: windows-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '10.0.x'
@@ -31,13 +41,16 @@ jobs:
         shell: pwsh
         run: |
           if ('${{ github.event_name }}' -eq 'workflow_dispatch') {
-            $v = '${{ inputs.version }}'
+            $baseVersion = '${{ inputs.version }}'
           } else {
-            $v = '${{ github.ref_name }}'.TrimStart('v')
+            $baseVersion = '${{ github.event.workflow_run.head_branch }}'.TrimStart('v')
           }
-          if ($v -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$') {
-            throw "Invalid NuGet version: $v"
+          if ($baseVersion -notmatch '^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$') {
+            throw "Invalid NuGet base version: $baseVersion"
           }
+          $commitUnixTime = [int64](& git show -s --format=%ct HEAD)
+          $timestamp = [DateTimeOffset]::FromUnixTimeSeconds($commitUnixTime).UtcDateTime.ToString('yyyyMMddHHmmss')
+          $v = if ($baseVersion.Contains('-')) { "$baseVersion.$timestamp" } else { "$baseVersion-ci.$timestamp" }
           "version=$v" >> $env:GITHUB_OUTPUT
       - name: Install pinned Windows App Runtime for headless Win2D
         shell: pwsh
@@ -67,3 +80,16 @@ jobs:
             artifacts/packages/*.nupkg
             artifacts/winrt/x64/Release/*.winmd
           if-no-files-found: error
+      - name: NuGet login with GitHub OIDC
+        if: success()
+        uses: NuGet/login@v1
+        id: nuget-login
+        with:
+          user: ${{ vars.NUGET_USERNAME }}
+      - name: Publish NuGet packages
+        if: success()
+        shell: pwsh
+        run: |
+          Get-ChildItem artifacts/packages/*.nupkg | ForEach-Object {
+            dotnet nuget push $_.FullName --api-key '${{ steps.nuget-login.outputs.NUGET_API_KEY }}' --source https://api.nuget.org/v3/index.json --skip-duplicate
+          }

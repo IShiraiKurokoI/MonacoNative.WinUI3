@@ -7,7 +7,7 @@ param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
     [switch]$RunPackages,
-    [string]$PackageVersion = '0.1.0',
+    [string]$PackageVersion = '0.8.0',
     [switch]$SkipUiBuild
 )
 $ErrorActionPreference = 'Stop'

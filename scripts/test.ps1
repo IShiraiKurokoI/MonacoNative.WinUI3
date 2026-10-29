@@ -7,7 +7,7 @@ param(
     [switch]$RunPackages,
     [switch]$RequireGoldenBaseline,
     [switch]$IncludeUIAutomation,
-    [string]$PackageVersion = '0.1.0',
+    [string]$PackageVersion = '0.8.0',
     [string]$ReportPath = 'artifacts/tests/layer-report.json'
 )
 $ErrorActionPreference = 'Stop'

@@ -4,7 +4,7 @@
 [CmdletBinding()]
 param(
     [ValidateSet('x64', 'ARM64')][string]$Platform = 'x64',
-    [string]$Version = '0.1.0',
+    [string]$Version = '0.8.0',
     [ValidateSet('Debug', 'Release')][string]$Configuration = 'Release',
     [string]$PackageDirectory = '',
     [string]$ReportPath = 'artifacts/tests/isolated-package.json',

@@ -12,6 +12,7 @@ import sys
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
+UNIFIED_COMMAND = "run: ./scripts/test-acceptance.ps1 -Mode Automated -Configuration ${{ matrix.configuration }} -RunPackages -PackageVersion 0.8.0-ci"
 
 
 def require(value: bool, problem: str) -> None:
@@ -72,11 +73,10 @@ def main() -> None:
     runtime = (ROOT / "scripts/install-windows-app-runtime-ci.ps1").read_text(encoding="utf-8")
     require("install-windows-app-runtime-ci.ps1" in workflow,
             "Windows job must install the required runtime before starting Win2D probes")
-    unified_command = "run: ./scripts/test-acceptance.ps1 -Mode Automated -Configuration ${{ matrix.configuration }} -RunPackages -PackageVersion 0.1.0-ci"
-    require(unified_command in workflow and "configuration: [Debug, Release]" in workflow,
+    require(UNIFIED_COMMAND in workflow and "configuration: [Debug, Release]" in workflow,
             "Windows CI must run Debug and Release through the same acceptance entry point")
     require(workflow.index("run: ./scripts/install-windows-app-runtime-ci.ps1") <
-            workflow.index(unified_command),
+            workflow.index(UNIFIED_COMMAND),
             "Windows runtime must be installed before running the renderer probes")
     require("windows-renderer-headless-diagnostics" in workflow and
             "renderer-current-*.png" in workflow,

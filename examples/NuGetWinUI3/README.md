@@ -7,14 +7,14 @@ The application shows one editor and releases it when the window closes.
 From the repository root, build the packages first:
 
 ```powershell
-./scripts/pack-windows.ps1 -Configuration Release -Version 0.1.0
+./scripts/pack-windows.ps1 -Configuration Release -Version 0.8.0
 
 dotnet restore examples/NuGetWinUI3/MonacoNative.NuGetExample.csproj `
     --configfile tests/PackageConsumerSmoke/NuGet.Config `
-    -p:Platform=x64 -p:MonacoNativePackageVersion=0.1.0
+    -p:Platform=x64 -p:MonacoNativePackageVersion=0.8.0
 
 dotnet build examples/NuGetWinUI3/MonacoNative.NuGetExample.csproj `
-    -c Release -p:Platform=x64 -p:MonacoNativePackageVersion=0.1.0 --no-restore
+    -c Release -p:Platform=x64 -p:MonacoNativePackageVersion=0.8.0 --no-restore
 ```
 
 Use `ARM64` instead of `x64` on an ARM64 Windows computer. Cross-compiling is
